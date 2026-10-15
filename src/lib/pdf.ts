@@ -51,7 +51,14 @@ async function browser(): Promise<Browser> {
   g.__lrBrowser = puppeteer.launch({
     executablePath: findChrome(),
     headless: true,
-    args: ["--no-first-run", "--no-default-browser-check", "--disable-extensions"],
+    args: [
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-extensions",
+      "--disable-dev-shm-usage",
+      // On a locked-down server Chrome's sandbox cannot start; it only ever opens this app's own report pages.
+      ...(process.env.CHROME_NO_SANDBOX === "1" ? ["--no-sandbox"] : []),
+    ],
   });
   return g.__lrBrowser;
 }

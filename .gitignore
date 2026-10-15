@@ -15,3 +15,4 @@ next-env.d.ts
 /data-backups/
 /data-old-demo/
 /Untitled
+/.deploy-https
