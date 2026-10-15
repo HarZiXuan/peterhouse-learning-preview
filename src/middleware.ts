@@ -7,9 +7,11 @@ export async function middleware(req: NextRequest) {
   if (pathname === "/login") return NextResponse.next();
   if (await verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value)) return NextResponse.next();
   if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Please log in." }, { status: 401 });
-  // Behind the reverse proxy the request URL names the internal address, so redirect with a relative Location.
+  // Behind the reverse proxy the request URL names the internal address, so build the redirect from the public Host header.
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host;
+  const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(":", "");
   const to = pathname === "/" ? "/login" : `/login?next=${encodeURIComponent(pathname + search)}`;
-  return new NextResponse(null, { status: 307, headers: { Location: to } });
+  return NextResponse.redirect(new URL(to, `${proto}://${host}`));
 }
 
 export const config = {
