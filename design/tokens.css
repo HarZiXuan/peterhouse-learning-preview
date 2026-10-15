@@ -1,0 +1,40 @@
+/* Peterhouse Preschool — generated from tokens.json */
+:root {
+  --surface: #ffffff;
+  --line: #bdbdbd;
+  --ink: #000000;
+  --ink-muted: #5c5c5c;
+  --brand: #ae1d25;
+  --on-brand: #ffffff;
+  --crest-red: #b72128;
+  --crest-gold: #fdcb40;
+  --crest-ink: #201e1f;
+  --sky: #c7e9fa;
+  --sky-mid: #94cae5;
+  --navy: #091f34;
+  --blush: #f5ccce;
+  --rose: #cd8184;
+  --space-2: 8px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-10: 40px;
+  --space-20: 80px;
+  --radius-none: 0;
+  --radius-pill: 999px;
+  --content-width: 960px;
+  --button-height: 42px;
+  --font-display: "Futura PT", Futura, "Jost", "Century Gothic", sans-serif;
+  --font-heading: "Poppins", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Avenir Next", Avenir, "Nunito Sans", "Segoe UI", sans-serif;
+  --font-ui: Arial, "Helvetica Neue", Helvetica, sans-serif;
+}
+.hero { font-family:var(--font-display); font-size:44px; line-height:52px; font-weight:400; }
+.section-title { font-family:var(--font-display); font-size:60px; line-height:68px; font-weight:400; }
+.programme-title { font-family:var(--font-display); font-size:22px; line-height:30px; font-weight:400; }
+.kicker { font-family:var(--font-display); font-size:17px; line-height:22px; font-weight:400; letter-spacing:0.3em; }
+.heading-1 { font-family:var(--font-heading); font-size:36px; line-height:46px; font-weight:600; }
+.heading-2 { font-family:var(--font-heading); font-size:28px; line-height:36px; font-weight:600; }
+.nav { font-family:var(--font-heading); font-size:16px; line-height:24px; font-weight:600; }
+.body { font-family:var(--font-body); font-size:16px; line-height:24px; font-weight:300; }
+.contact { font-family:var(--font-body); font-size:16px; line-height:24px; font-weight:300; }
+.button { font-family:var(--font-ui); font-size:17px; line-height:22px; font-weight:400; }

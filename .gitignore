@@ -1,0 +1,17 @@
+/node_modules
+/.next/
+/out/
+/build
+.DS_Store
+._*
+*.pem
+npm-debug.log*
+.env*
+!.env.example
+*.tsbuildinfo
+next-env.d.ts
+# School data: records and photos never go into version control.
+/data/
+/data-backups/
+/data-old-demo/
+/Untitled
