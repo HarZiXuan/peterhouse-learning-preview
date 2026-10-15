@@ -19,7 +19,9 @@ export function SunRays({ className }: { className?: string }) {
       <g stroke={GOLD} strokeWidth="9" strokeLinecap="round">
         {Array.from({ length: 12 }, (_, i) => {
           const a = (i * Math.PI) / 6;
-          return <line key={i} x1={100 + Math.cos(a) * 62} y1={100 + Math.sin(a) * 62} x2={100 + Math.cos(a) * 90} y2={100 + Math.sin(a) * 90} />;
+          // Rounded so server and browser print identical numbers (no hydration mismatch).
+          const pt = (r: number, f: (x: number) => number) => Math.round((100 + f(a) * r) * 100) / 100;
+          return <line key={i} x1={pt(62, Math.cos)} y1={pt(62, Math.sin)} x2={pt(90, Math.cos)} y2={pt(90, Math.sin)} />;
         })}
       </g>
       <circle cx="100" cy="100" r="46" fill={GOLD} />

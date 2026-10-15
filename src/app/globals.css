@@ -507,7 +507,7 @@ h1, h2 { color: var(--navy); }
 @keyframes dlg-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
 
 @media (max-width: 860px) {
-  .tabbar { grid-template-columns: repeat(2, 1fr); }
+  .tabbar { grid-template-columns: repeat(3, 1fr); }
   .rail-foot { display: none; }
   .adddialog { margin: auto 0 0; width: 100vw; max-width: none; border-radius: 22px 22px 0 0; max-height: 92vh; }
   .adddialog[open] { animation: sheet-in 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
@@ -558,4 +558,37 @@ h1, h2 { color: var(--navy); }
 .login-btn { width: 100%; justify-content: center; border-radius: 999px; height: 46px; font-size: 16px; }
 
 .rail-logout { width: 100%; background: none; border: none; cursor: pointer; margin-top: 0; border-top: none; font-size: 14px; color: var(--sky-mid); }
-.tab-logout { background: none; border: none; display: flex; align-items: center; justify-content: center; min-height: 62px; font-family: var(--font-heading); font-size: 12px; font-weight: 500; color: var(--ink-muted); cursor: pointer; }
+
+/* ── Phone polish ── */
+@media (max-width: 860px) {
+  .tabbar button.tab-logout { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 62px; background: none; border: none; cursor: pointer; color: var(--ink-muted); font-family: var(--font-heading); font-size: 12px; font-weight: 500; }
+  .tabbar button.tab-logout svg { width: 24px; height: 24px; padding: 2px 14px; box-sizing: content-box; }
+  .rail-brand img { filter: none; }
+  .rail { min-height: 56px; }
+
+  /* Filter chips: one scrollable row instead of wrapping onto two lines */
+  .chips { flex-wrap: nowrap; overflow-x: auto; margin-right: -16px; padding: 2px 16px 6px 0; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chips a { flex: none; min-height: 44px; }
+
+  /* Child cards: compact rows instead of tall, mostly empty tiles */
+  .kid-main { grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 14px; row-gap: 2px; align-items: center; padding: 16px 16px 8px; }
+  .kid-main .avatar, .kid-main .tile { grid-row: 1 / span 2; margin-bottom: 0; width: 60px !important; height: 60px !important; }
+  .kid-main .tile { font-size: 20px !important; }
+  .kid-name { align-self: end; }
+  .kid-state { align-self: start; }
+  .kid-foot { padding: 4px 16px 14px; }
+
+  /* Child page header: no awkward wrapping breadcrumb */
+  .child-head { flex-wrap: wrap; }
+  .child-head .eyebrow { white-space: nowrap; font-size: 12px; }
+  .child-head .btn { flex-basis: 100%; }
+  .child-head h1 { font-size: 26px; }
+
+  /* Report preview: readable block, editor below it */
+  .wb-preview { height: 62vh; }
+  .wb-card { padding: 10px; }
+  .wb-goto { display: none; }
+  .page-head .row { width: 100%; }
+  .page-head .row .btn { flex: 1; justify-content: center; text-align: center; }
+}

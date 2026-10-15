@@ -37,7 +37,7 @@ export default async function ReportViewPage({ params }: { params: Promise<{ id:
       </div>
       {draft.notes.length > 0 && <p className="notice-gold" style={{ marginBottom: 16 }}>{draft.notes.join(" ")}</p>}
       <p className="small muted" style={{ marginBottom: 12 }}>
-        Written by {draft.provider === "sentence_bank" ? "the built-in basic writer" : `AI (${draft.provider})`}. Not quite right? Edit any wording on the right and watch the report change, then download.
+        Written by {draft.provider === "sentence_bank" ? "the built-in basic writer" : `AI (${draft.provider})`}. Not quite right? Edit any wording in the boxes and watch the report change, then download.
       </p>
       <ReportWorkbench reviewId={id} data={data} school={getSchool()} sections={sections} reportDateIso={new Date().toISOString()} />
     </main>
