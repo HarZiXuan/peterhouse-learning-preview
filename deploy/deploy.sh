@@ -42,6 +42,7 @@ PLAN
       echo "DATA_DIR=/opt/peterhouse/data"
       echo "CHROME_PATH=/usr/bin/google-chrome-stable"
       echo "CHROME_NO_SANDBOX=1"
+      echo "INTERNAL_ORIGIN=http://127.0.0.1:3200"
       echo "COOKIE_SECURE=$([ -f .deploy-https ] && echo 1 || echo 0)"
       echo "APP_LOGIN_USER=$LOGIN_USER"
       echo "APP_LOGIN_PASSWORD=$LOGIN_PASS"
