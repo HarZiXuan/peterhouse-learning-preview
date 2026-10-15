@@ -53,7 +53,8 @@ set -euo pipefail
 cd /opt/peterhouse/app.new
 chown -R peterhouse:peterhouse /opt/peterhouse/app.new
 # Build under a memory cap so an out-of-memory only ever kills this build, never the neighbours.
-runuser -u peterhouse -- bash -c 'npm ci --no-audit --no-fund'
+# npm ci is strict about optional platform packages that a Mac lockfile can omit; fall back to npm install.
+runuser -u peterhouse -- bash -c 'cd /opt/peterhouse/app.new && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund)'
 systemd-run --scope -p MemoryMax=1100M -p MemorySwapMax=2G --quiet runuser -u peterhouse -- bash -c 'cd /opt/peterhouse/app.new && NODE_OPTIONS=--max-old-space-size=1000 npx next build'
 systemctl stop peterhouse 2>/dev/null || true
 [ -d /opt/peterhouse/app ] && mv /opt/peterhouse/app /opt/peterhouse/app.prev
