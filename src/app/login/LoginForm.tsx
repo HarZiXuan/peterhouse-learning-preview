@@ -10,7 +10,7 @@ export function LoginForm({ next }: { next: string }) {
       <input type="hidden" name="next" value={next} />
       <label className="field">
         <span>Username</span>
-        <input className="input" name="user" autoComplete="username" autoCapitalize="none" required autoFocus />
+        <input className="input" name="user" defaultValue={state?.user ?? ""} autoComplete="username" autoCapitalize="none" required autoFocus />
       </label>
       <label className="field">
         <span>Password</span>

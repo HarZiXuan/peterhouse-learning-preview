@@ -11,7 +11,7 @@ const fails = new Map<string, { n: number; until: number }>();
 const digest = (s: string) => crypto.createHash("sha256").update(s).digest();
 const same = (a: string, b: string) => crypto.timingSafeEqual(digest(a), digest(b));
 
-export async function loginAction(_prev: { error: string } | undefined, formData: FormData): Promise<{ error: string }> {
+export async function loginAction(_prev: { error: string; user?: string } | undefined, formData: FormData): Promise<{ error: string; user?: string }> {
   if (!loginConfigured()) return { error: "Login is not set up on this server. Ask whoever installed it to set APP_LOGIN_USER and APP_LOGIN_PASSWORD." };
   const h = await headers();
   const ip = h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || "local";
@@ -26,7 +26,7 @@ export async function loginAction(_prev: { error: string } | undefined, formData
   if (!(okUser && okPass)) {
     const n = (rec?.n ?? 0) + 1;
     fails.set(ip, { n, until: n >= 8 ? Date.now() + 5 * 60_000 : 0 });
-    return { error: "That username or password is not right." };
+    return { error: "That username or password is not right.", user };
   }
   fails.delete(ip);
   (await cookies()).set(SESSION_COOKIE, await createSessionToken(), {
