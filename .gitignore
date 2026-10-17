@@ -1,13 +1,14 @@
-/node_modules
-/.next/
-/out/
-/build
+node_modules
+.next/
+out/
+build
 .DS_Store
 ._*
 *.pem
 npm-debug.log*
 .env*
 !.env.example
+!.env.production.example
 *.tsbuildinfo
 next-env.d.ts
 # School data: records and photos never go into version control.
@@ -16,3 +17,5 @@ next-env.d.ts
 /data-old-demo/
 /Untitled
 /.deploy-https
+/backend/dist/
+dist/

@@ -1,0 +1,95 @@
+# Production stack. Everything is private to the server: only nginx (on the host) talks to the two published
+# loopback ports, and the database has no published port at all.
+#
+# Use via infra/server/dc.sh (adds the right --env-file flags), or directly:
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+name: peterhouse
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: peterhouse
+      POSTGRES_DB: peterhouse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=40", "-c", "password_encryption=scram-sha-256", "-c", "log_min_duration_statement=1000"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [data]
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/postgresql
+    cap_drop: [ALL]
+    # Only what the image's start-up needs to hand the data folder to the postgres user.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U peterhouse -d peterhouse"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: ${BACKEND_IMAGE:-peterhouse-backend}:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://peterhouse:${POSTGRES_PASSWORD}@db:5432/peterhouse
+      FRONTEND_INTERNAL_URL: http://frontend:3000
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4100:4100"
+    # db: private, no internet. web: reaches the AI service and the frontend (for PDFs).
+    networks: [data, web]
+    # Photos live (encrypted) in Postgres, so the backend writes nothing to its own disk, except Chrome's scratch space.
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 700m
+    pids_limit: 256
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-peterhouse-frontend}:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        BACKEND_URL: http://backend:4100
+    restart: unless-stopped
+    # No env_file: the frontend holds no secrets. It only needs to know where the backend is.
+    environment:
+      BACKEND_URL: http://backend:4100
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [web]
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/frontend/.next/cache
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 400m
+    pids_limit: 128
+
+networks:
+  # No route to the internet or to the frontend: only the database and the backend.
+  data:
+    internal: true
+  web: {}
+
+volumes:
+  pgdata:

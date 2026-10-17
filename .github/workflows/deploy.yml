@@ -1,0 +1,120 @@
+name: Deploy
+
+# Manual only: Actions → Deploy → Run workflow.
+#
+# What it does: builds both images, pushes them to GitHub Container Registry, then joins your Tailscale network as an
+# ephemeral CI node and runs `docker compose pull && up -d` on the server over SSH. The server's SSH port is NOT open
+# to the internet, so Tailscale is the only way in.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions). Nothing secret is stored in the repo:
+#   TS_OAUTH_CLIENT_ID / TS_OAUTH_SECRET  Tailscale OAuth client (scope: auth_keys, tag: tag:ci). In the tailnet policy, give
+#                                         tag:ci access to the server on port 22 and make tag:ci an owner of itself.
+#   DEPLOY_HOST        the server's Tailscale name, e.g. peterhouse-reviews
+#   DEPLOY_USER        e.g. deploy
+#   DEPLOY_SSH_KEY     private key whose public half is in the deploy user's authorized_keys (a key used only for this)
+#   DEPLOY_HOST_KEY    the server's SSH host key line, from a trusted machine on the tailnet:  ssh-keyscan -t ed25519 <DEPLOY_HOST>
+#                      (pinning it means CI cannot be tricked into talking to an impostor)
+# The server must already have /opt/peterhouse/.env.production (see docs/DEPLOY.md).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      image_prefix: ${{ steps.names.outputs.prefix }}
+      tag: ${{ steps.names.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: names
+        run: |
+          prefix="$(echo "${REGISTRY}/${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"   # registry names must be lower-case
+          echo "prefix=${prefix}" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.names.outputs.prefix }}/backend:${{ steps.names.outputs.tag }}
+            ${{ steps.names.outputs.prefix }}/backend:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          build-args: |
+            BACKEND_URL=http://backend:4100
+          tags: |
+            ${{ steps.names.outputs.prefix }}/frontend:${{ steps.names.outputs.tag }}
+            ${{ steps.names.outputs.prefix }}/frontend:latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  deploy:
+    runs-on: ubuntu-24.04
+    needs: build
+    environment: production   # add required reviewers on this environment if you want an approval click before each deploy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Join the tailnet
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: Prepare SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "${{ secrets.DEPLOY_HOST_KEY }}" > ~/.ssh/known_hosts
+          printf 'Host target\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/id_deploy\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n' \
+            "${{ secrets.DEPLOY_HOST }}" "${{ secrets.DEPLOY_USER }}" > ~/.ssh/config
+      - name: Copy compose file and server scripts
+        run: tar -czf - docker-compose.prod.yml infra | ssh target 'mkdir -p /opt/peterhouse && tar -xzf - -C /opt/peterhouse'
+      - name: Pull new images and restart
+        env:
+          IMAGE_PREFIX: ${{ needs.build.outputs.image_prefix }}
+          IMAGE_TAG: ${{ needs.build.outputs.tag }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The registry token goes over stdin, never onto a command line.
+          printf '%s' "$GHCR_TOKEN" | ssh target "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+          ssh target "set -e; cd /opt/peterhouse
+            printf 'BACKEND_IMAGE=%s/backend\nFRONTEND_IMAGE=%s/frontend\nIMAGE_TAG=%s\n' '$IMAGE_PREFIX' '$IMAGE_PREFIX' '$IMAGE_TAG' > .deploy.env
+            infra/server/dc.sh pull
+            infra/server/dc.sh up -d --remove-orphans
+            docker logout ghcr.io
+            docker image prune -f"
+      - name: Wait for the backend to report healthy
+        run: |
+          for i in $(seq 1 30); do
+            if ssh target "curl -fsS http://127.0.0.1:4100/healthz" >/dev/null 2>&1; then echo healthy; exit 0; fi
+            sleep 5
+          done
+          ssh target "/opt/peterhouse/infra/server/dc.sh logs --tail 50 backend" || true
+          echo "Backend did not become healthy" >&2; exit 1

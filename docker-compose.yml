@@ -1,0 +1,21 @@
+# Local development: just the database. Run the backend and frontend with npm (see README).
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: peterhouse
+      POSTGRES_PASSWORD: peterhouse
+      POSTGRES_DB: peterhouse
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U peterhouse"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

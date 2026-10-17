@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Peterhouse backup at 02:30 Singapore time
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Singapore
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
