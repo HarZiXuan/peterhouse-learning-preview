@@ -1,0 +1,122 @@
+/**
+ * The fixed rating scale (Teacher Questions v0.3, section 1). It is not admin-editable, so the writer
+ * always reads a score the same way. Numbers are stored but never shown to families.
+ */
+export const SCALE = [
+  { score: 1, label: "Still learning", meaning: "Just starting; needs a lot of help" },
+  { score: 2, label: "Sometimes", meaning: "Shows it sometimes, usually with help" },
+  { score: 3, label: "Regularly", meaning: "Shows it regularly in familiar situations" },
+  { score: 4, label: "Confidently", meaning: "Shows it easily, in different situations" },
+  { score: 5, label: "Really shines", meaning: "Does it independently and helps or inspires others" },
+] as const;
+
+export const NOT_SEEN = {
+  label: "Not seen yet",
+  meaning: "Joined late, was away, or no chance to observe. No score is saved.",
+} as const;
+
+export const LEVELS = SCALE.map((s) => s.label);
+export type LevelWord = (typeof SCALE)[number]["label"];
+/** 1–5, or 0 for "Not seen yet". A rating only counts once `touched` is true: every rating starts blank. */
+export type Level = 0 | 1 | 2 | 3 | 4 | 5;
+
+/** Limits from the spec. */
+export const NOTE_MAX = 140;
+export const LOVE_MAX = 300;
+export const HOME_PICKS_MAX = 2;
+export const PHOTOS_PER_AREA = 3;
+export const QUESTIONS_MIN = 3;
+export const QUESTIONS_MAX = 6;
+
+export type Skill = {
+  /** Permanent hidden ID ("eng_1"). Rewording keeps it; a different skill gets a new one. */
+  key: string;
+  /** "{name} listens well and responds in a group." {name} and {he/she/they} are filled in for the child. */
+  text: string;
+};
+
+export type Area = {
+  key: string;
+  name: string;
+  shortName: string;
+  /** A second name shown beside the first, e.g. "华文". */
+  subName?: string;
+  /** Icon name for the form and the report (eng, chi, mat, sed, enr). */
+  icon?: string;
+  skills: Skill[];
+  /** Short text question, answered in a sentence or two ("What did {name} love most this semester?"). */
+  love?: { key: string; text: string };
+  /** Ideas to try at home; the teacher picks up to two. */
+  homeIdeas?: string[];
+};
+
+/** One frozen question set. Reviews keep the copy they were first opened with. */
+export type Rubric = {
+  version: number;
+  areas: Area[];
+  neverUse: string[];
+};
+
+export type Role = "admin" | "teacher";
+export type ClassRole = "lead" | "co";
+export type Pronoun = "she" | "he" | "they";
+export type ReviewStatus = "not_started" | "draft" | "ready" | "written" | "submitted" | "changes_requested" | "approved";
+export type TermStatus = "open" | "closed" | "locked";
+
+export const STATUS_LABEL: Record<ReviewStatus, string> = {
+  not_started: "Not started",
+  draft: "Draft",
+  ready: "Ready",
+  written: "Written",
+  submitted: "Waiting for review",
+  changes_requested: "Changes requested",
+  approved: "Approved",
+};
+
+export type SkillAnswer = {
+  level: Level;
+  /** True once the teacher has picked a score or "Not seen yet". Untouched means not rated yet. */
+  touched?: boolean;
+};
+
+export type AreaAnswer = {
+  skills: Record<string, SkillAnswer>;
+  /** One optional comment, up to about 140 characters (Chinese allowed). */
+  note: string;
+  visited: boolean;
+  /** Answer to the area's short text question, when it has one. */
+  love?: string;
+  /** The home ideas the teacher picked, when the area offers them. */
+  home?: string[];
+  /** Ticked moments from the older question sets; no longer asked. */
+  moments?: string[];
+};
+
+export type User = {
+  id: number;
+  email: string;
+  name: string;
+  role: Role;
+};
+
+export type ParagraphKey = string; // "opening" | `area:${key}` | "closing"
+
+export type Paragraph = {
+  key: ParagraphKey;
+  title: string;
+  text: string;
+  flags: string[];
+  stale: boolean;
+  edited: boolean;
+};
+
+export type Draft = {
+  paragraphs: Paragraph[];
+  homeIdeas: string[];
+  provider: string;
+  writtenAt: string;
+  writtenBy: number;
+  /** The exact anonymous text sent for writing (empty for the sentence bank, which runs locally). */
+  sent: string;
+  notes: string[];
+};

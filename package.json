@@ -1,17 +1,20 @@
 {
   "name": "peterhouse-learning-review",
   "private": true,
-  "workspaces": ["shared", "backend", "frontend"],
   "scripts": {
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
-    "migrate": "npm run migrate -w backend",
-    "dev:backend": "npm run dev -w backend",
-    "dev:frontend": "npm run dev -w frontend",
-    "build": "npm run build -w backend && npm run build -w frontend",
-    "test": "npm test -w backend",
-    "typecheck": "npm run typecheck -w shared && npm run typecheck -w backend && npm run typecheck -w frontend",
-    "lint": "npm run lint -w frontend"
+    "migrate": "pnpm --filter @peterhouse/backend migrate",
+    "dev:backend": "pnpm --filter @peterhouse/backend dev",
+    "dev:frontend": "pnpm --filter @peterhouse/frontend dev",
+    "build": "pnpm -r --filter @peterhouse/backend --filter @peterhouse/frontend build",
+    "test": "pnpm --filter @peterhouse/backend test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm --filter @peterhouse/frontend lint"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@10.33.2"
 }

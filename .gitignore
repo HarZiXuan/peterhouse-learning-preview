@@ -11,11 +11,7 @@ npm-debug.log*
 !.env.production.example
 *.tsbuildinfo
 next-env.d.ts
-# School data: records and photos never go into version control.
-/data/
-/data-backups/
-/data-old-demo/
-/Untitled
-/.deploy-https
-/backend/dist/
 dist/
+# Leftovers of the old single-computer version (SQLite data, backups, old env files). Never committed.
+/legacy/
+/app/backend/dist/

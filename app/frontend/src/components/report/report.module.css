@@ -1,0 +1,200 @@
+/* The A4 keepsake families receive. Crest red drenches the cover and send-off; sky, blush and gold
+   tint the learning pages. Rounded shapes and taped polaroids; body text >= 10.5pt. */
+
+.report {
+  /* The family report keeps the Peterhouse print palette and type (PRODUCT.md), independent of the staff UI. */
+  --red: #ae1d25;
+  --gold: #fdcb40;
+  --sky: #c7e9fa;
+  --sky-mid: #94cae5;
+  --blush: #f5ccce;
+  --navy-ink: #091f34;
+  --font-heading: var(--font-poppins), "Helvetica Neue", Arial, "Noto Sans SC", "PingFang SC", sans-serif;
+  --font-body: var(--font-nunito), "Avenir Next", Avenir, "Segoe UI", "Noto Sans SC", "PingFang SC", sans-serif;
+  background: #ececec; padding: 24px 0; font-family: var(--font-body); color: var(--navy-ink);
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.sheet {
+  width: 210mm; height: 297mm; margin: 0 auto 24px; background: #fff; position: relative; overflow: hidden;
+  border: 1px solid #d6d6d6; display: flex; flex-direction: column;
+}
+@page { size: A4; margin: 0; }
+@media print {
+  .report { background: none; padding: 0; }
+  .sheet { margin: 0; border: none; }
+  .sheet + .sheet { break-before: page; }
+}
+
+.watermark {
+  position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 20;
+  font-family: var(--font-heading); font-weight: 700; font-size: 150pt; letter-spacing: 0.1em;
+  color: rgba(174, 29, 37, 0.09); transform: rotate(-32deg);
+}
+.footer {
+  margin-top: auto; display: flex; justify-content: space-between; padding: 0 14mm 8mm; position: relative; z-index: 3;
+  font-family: var(--font-heading); font-size: 7.5pt; letter-spacing: 0.14em; text-transform: uppercase; color: #5f6b78;
+}
+.footLight { color: rgba(255, 255, 255, 0.85); }
+
+.body { font-size: 10.75pt; line-height: 1.55; margin-top: 2.5mm; break-inside: avoid; }
+.meta { font-size: 10.5pt; color: #3a4654; margin-top: 1mm; }
+.kickerLight {
+  font-family: var(--font-heading); font-weight: 600; font-size: 9pt; letter-spacing: 0.28em; text-transform: uppercase; color: var(--gold);
+}
+
+/* ───────── Cover ───────── */
+.cover { background: var(--red); color: #fff; padding: 14mm 14mm 0; }
+.cover > * { position: relative; z-index: 2; }
+.cover > .disc, .cover > .spark { position: absolute; z-index: 0; }
+.disc { border-radius: 50%; }
+.discGold { width: 100mm; height: 100mm; right: -34mm; top: -38mm; background: var(--gold); }
+.discSky { width: 78mm; height: 78mm; left: -40mm; bottom: 34mm; background: var(--sky); }
+.discBlush { width: 78mm; height: 78mm; right: -30mm; top: 112mm; background: var(--blush); }
+.spark { color: var(--gold); }
+.spark1 { width: 11mm; left: 78mm; top: 20mm; }
+.spark2 { width: 7mm; left: 14mm; top: 118mm; color: #fff; }
+.spark3 { width: 9mm; right: 18mm; top: 214mm; color: #fff; }
+
+.coverHead { display: flex; justify-content: space-between; align-items: flex-start; }
+.crestBadge { width: 28mm; height: 28mm; border-radius: 50%; background: #fff; display: grid; place-items: center; }
+.crestBadge img { width: 16mm; height: auto; display: block; }
+.sticker {
+  width: 36mm; height: 36mm; border-radius: 50%; background: #fff; color: var(--red); transform: rotate(10deg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 2mm 4mm 0 0;
+  font-family: var(--font-heading); text-transform: uppercase; box-shadow: 0 1mm 3mm rgba(9, 31, 52, 0.25);
+  outline: 1.2mm dashed var(--gold); outline-offset: -3mm;
+}
+.sticker span { font-size: 9.5pt; font-weight: 600; letter-spacing: 0.2em; }
+.sticker strong { font-size: 19pt; font-weight: 700; line-height: 1.1; }
+.coverTitle {
+  font-family: var(--font-heading); font-weight: 700; font-size: 42pt; line-height: 1.02; color: #fff; margin-top: 4mm; letter-spacing: -0.01em;
+}
+
+.heroWrap { align-self: flex-end; position: relative; width: 112mm; height: 112mm; margin-top: 2mm; margin-right: 2mm; }
+.heroRing { position: absolute; inset: -4mm; border-radius: 50%; border: 1.6mm solid var(--gold); transform: translate(3mm, 3mm); }
+.heroPhoto { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; border: 2.4mm solid #fff; background: var(--sky); display: block; }
+.heroInitial {
+  position: absolute; inset: 0; border-radius: 50%; border: 2.4mm solid #fff; background: var(--sky); display: grid; place-items: center;
+}
+.heroInitial span {
+  width: 64mm; height: 64mm; border-radius: 50%; background: #fff; color: var(--red); display: grid; place-items: center;
+  font-family: var(--font-heading); font-weight: 700; font-size: 74pt;
+}
+.nameBlock { position: absolute; left: 14mm; top: 152mm; width: 80mm; z-index: 3; }
+.childName { font-family: var(--font-heading); font-weight: 700; font-size: 34pt; line-height: 1.04; color: #fff; overflow-wrap: anywhere; }
+.coverMeta { font-size: 11.5pt; font-weight: 600; margin-top: 2.5mm; color: #fff; }
+.openingCard {
+  margin-top: auto; margin-bottom: 4mm; background: #fff; color: var(--navy-ink); border-radius: 7mm; padding: 6mm 8mm 7mm;
+  box-shadow: 0 1.5mm 4mm rgba(9, 31, 52, 0.22);
+}
+.openingCard .body:first-child { margin-top: 0; }
+
+/* ───────── Learning pages (one area per page) ───────── */
+.areaSheet { --soft: #e8f5fc; --solid: #94cae5; background: #fff; }
+.tone_sky { --soft: #e8f5fc; --solid: #94cae5; }
+.tone_blush { --soft: #fbe6e7; --solid: #f5ccce; }
+.tone_gold { --soft: #fff3cd; --solid: #fdcb40; }
+.pageHead {
+  display: flex; align-items: center; gap: 4mm; padding: 10mm 14mm 0; font-family: var(--font-heading); font-weight: 600;
+  font-size: 8pt; letter-spacing: 0.16em; text-transform: uppercase; color: var(--navy-ink);
+}
+.miniCrest { width: 8mm; height: auto; display: block; }
+
+.banner {
+  margin: 6mm 14mm 0; padding: 8mm 10mm; border-radius: 8mm; background: var(--solid); display: flex; justify-content: space-between; align-items: center; gap: 8mm;
+}
+.areaNo { font-family: var(--font-heading); font-weight: 600; font-size: 8pt; letter-spacing: 0.2em; text-transform: uppercase; color: var(--navy-ink); }
+.areaTitle { font-family: var(--font-heading); font-weight: 700; font-size: 24pt; line-height: 1.12; color: var(--red); margin: 2mm 0 0; }
+.overall {
+  display: inline-block; margin-top: 3mm; padding: 0.9mm 3.6mm; border-radius: 99px; background: #fff;
+  font-family: var(--font-heading); font-weight: 600; font-size: 9pt; color: var(--navy-ink);
+}
+.medal { width: 30mm; height: 30mm; flex: none; border-radius: 50%; background: #fff; padding: 4.5mm; }
+.medal svg, .bigMedal svg { width: 100%; height: 100%; display: block; }
+
+.areaBody { display: flex; gap: 10mm; align-items: center; padding: 9mm 14mm 0; }
+.areaBody.flip { flex-direction: row-reverse; }
+.scene { width: 66mm; flex: none; display: grid; place-items: center; }
+.polaroid { position: relative; width: 62mm; background: #fff; padding: 2.6mm 2.6mm 10mm; box-shadow: 0 1.2mm 3mm rgba(9, 31, 52, 0.28); }
+.polaroid img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; display: block; background: var(--solid); }
+.tape { position: absolute; left: 50%; top: -3mm; width: 20mm; height: 6mm; background: rgba(253, 203, 64, 0.85); transform: translateX(-50%) rotate(-4deg); }
+.bigMedal { width: 58mm; height: 58mm; border-radius: 50%; background: var(--soft); padding: 11mm; box-shadow: 0 0 0 3mm var(--solid) inset; }
+
+.skills { list-style: none; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3mm; }
+.skills li { background: var(--soft); border-radius: 5mm; padding: 3mm 5mm; break-inside: avoid; }
+.skillName { display: block; font-size: 10.75pt; font-weight: 700; line-height: 1.25; }
+.skillLevel { display: flex; align-items: center; gap: 2.5mm; margin-top: 1.6mm; }
+.dots { display: inline-flex; gap: 1.1mm; }
+.dots i { width: 3.2mm; height: 3.2mm; border-radius: 50%; border: 0.35mm solid var(--red); display: block; background: #fff; }
+.dots i.on { background: var(--red); }
+.levelWord { font-size: 9.5pt; font-weight: 700; color: var(--red); }
+.up { font-size: 8.5pt; font-weight: 700; color: var(--red); }
+.prev { font-size: 8pt; color: #5f6b78; margin-left: auto; white-space: nowrap; }
+.notYet { color: #4b5663; font-style: italic; font-size: 10pt; }
+
+.areaStory { margin: 8mm 14mm 0; padding: 6mm 9mm 7mm; border-radius: 7mm; background: var(--soft); }
+.areaStory .body { font-size: 11.5pt; line-height: 1.58; margin-top: 3mm; }
+.body strong { font-weight: 800; color: var(--red); }
+.areaStory .body:first-child { margin-top: 0; }
+
+/* ───────── Looking ahead ───────── */
+.closingSheet { background: #fff; }
+.closingTop { position: relative; background: var(--red); color: #fff; padding: 14mm 14mm 22mm; min-height: 68mm; }
+.closingTop > * { position: relative; z-index: 1; }
+.closingTitle { font-family: var(--font-heading); font-weight: 700; font-size: 28pt; line-height: 1.08; color: #fff; margin-top: 3mm; max-width: 108mm; overflow-wrap: anywhere; }
+.sun { position: absolute !important; right: 10mm; top: 4mm; width: 54mm; height: 54mm; z-index: 0 !important; }
+.strip { position: absolute !important; right: 12mm; top: 10mm; display: flex; gap: 4mm; z-index: 2 !important; }
+.strip .polaroid { width: 38mm; padding: 2mm 2mm 7mm; }
+.closingPage { padding: 0 14mm 4mm; margin-top: -14mm; display: flex; flex-direction: column; gap: 5mm; flex: 1; position: relative; z-index: 3; }
+.closingCard { background: #fff; border-radius: 7mm; padding: 6mm 9mm 7mm; box-shadow: 0 1.5mm 4mm rgba(9, 31, 52, 0.2); }
+.closingCard .body:first-child { margin-top: 0; }
+
+.twoCol { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+.listCard { border-radius: 7mm; padding: 5mm 8mm 6mm; }
+.listGold { background: #fff3cd; }
+.listSky { background: #e8f5fc; }
+.listTitle { display: flex; align-items: center; gap: 2.5mm; font-family: var(--font-heading); font-weight: 700; font-size: 12pt; color: var(--red); margin-bottom: 2.5mm; }
+.listIcon { width: 6mm; height: 6mm; color: var(--gold); flex: none; stroke: #e0a800; stroke-width: 1.2; }
+.arrow { width: 6mm; height: 6mm; border-radius: 50%; background: var(--sky-mid); color: var(--navy-ink); display: inline-grid; place-items: center; font-size: 10pt; flex: none; }
+.list { list-style: none; font-size: 11pt; line-height: 1.4; display: flex; flex-direction: column; gap: 2.4mm; }
+.list li { position: relative; padding-left: 4.5mm; }
+.list li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 2mm; height: 2mm; border-radius: 50%; background: var(--red); }
+
+.home { background: var(--blush); border-radius: 7mm; padding: 5mm 9mm 6mm; }
+.homeTitle { font-family: var(--font-heading); font-weight: 700; font-size: 12pt; color: var(--red); margin-bottom: 2.5mm; }
+.homeList { list-style: none; counter-reset: idea; display: flex; flex-direction: column; gap: 2.5mm; font-size: 11pt; line-height: 1.5; }
+.homeList li { counter-increment: idea; position: relative; padding-left: 9mm; min-height: 6.5mm; }
+.homeList li::before {
+  content: counter(idea); position: absolute; left: 0; top: 0; width: 6.5mm; height: 6.5mm; border-radius: 50%; background: var(--red); color: #fff;
+  display: grid; place-items: center; font-family: var(--font-heading); font-weight: 700; font-size: 9.5pt;
+}
+
+.signoff { margin-top: auto; padding: 4mm 0 2mm; border-top: 0.8mm solid var(--gold); display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; }
+.signKicker { font-family: var(--font-heading); font-weight: 600; font-size: 8pt; letter-spacing: 0.24em; text-transform: uppercase; color: #4b5663; }
+.teachers { font-family: var(--font-heading); font-weight: 700; font-size: 13pt; margin-top: 1.5mm; color: var(--red); }
+.contact { font-size: 9.5pt; color: #3a4654; text-align: right; line-height: 1.5; }
+
+/* Term at a glance */
+.glance { display: flex; align-items: center; gap: 8mm; background: #fff; border: 0.5mm solid var(--sky); border-radius: 7mm; padding: 4mm 8mm; }
+.glanceTotal { text-align: center; flex: none; width: 30mm; }
+.glanceTotal strong { display: block; font-family: var(--font-heading); font-weight: 700; font-size: 26pt; color: var(--red); line-height: 1; }
+.glanceTotal span { font-size: 7pt; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #4b5663; }
+.glance ul { list-style: none; flex: 1; display: flex; flex-direction: column; gap: 1.4mm; }
+.glance li { display: grid; grid-template-columns: 52mm 1fr 8mm; align-items: center; gap: 3mm; font-size: 8.5pt; font-weight: 600; line-height: 1.2; }
+.glance li i { display: block; height: 2.6mm; border-radius: 99px; background: var(--soft-track, #e8f5fc); overflow: hidden; }
+.glance li b { display: block; height: 100%; background: var(--red); border-radius: 99px; }
+.glance li em { font-style: normal; font-weight: 700; color: var(--red); text-align: right; }
+
+/* Editor interaction (screen only) */
+@media screen {
+  .pickable { cursor: pointer; border-radius: 3mm; transition: background 0.15s; }
+  .pickable:hover { background: rgba(253, 203, 64, 0.18); }
+  .active { outline: 0.8mm solid var(--gold); outline-offset: 1.5mm; background: rgba(253, 203, 64, 0.16); }
+}
+
+/* v0.3: Chinese name, area sub-name, and the "loved most" quote */
+.childHan { font-family: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; font-weight: 500; font-size: 15pt; color: #fff; opacity: 0.9; margin-top: 1mm; }
+.areaHan { font-family: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; font-weight: 500; font-size: 0.7em; opacity: 0.75; }
+.loved { margin: 5mm 0 0; padding: 4mm 6mm; border-radius: 5mm; background: #fff; border-left: 0; }
+.loved span { display: block; font-size: 8pt; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #4b5663; margin-bottom: 1mm; }
+.loved p { font-size: 11pt; line-height: 1.45; }

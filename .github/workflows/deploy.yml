@@ -53,7 +53,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: backend/Dockerfile
+          file: app/backend/Dockerfile
           push: true
           tags: |
             ${{ steps.names.outputs.prefix }}/backend:${{ steps.names.outputs.tag }}
@@ -64,7 +64,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: frontend/Dockerfile
+          file: app/frontend/Dockerfile
           push: true
           build-args: |
             BACKEND_URL=http://backend:4100

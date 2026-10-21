@@ -1,0 +1,38 @@
+{
+  "name": "@peterhouse/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
+    "build": "tsup",
+    "start": "node dist/server.js",
+    "migrate": "tsx --env-file-if-exists=.env src/cli/migrate.ts",
+    "create-admin": "tsx --env-file-if-exists=.env src/cli/create-admin.ts",
+    "import-sqlite": "tsx --env-file-if-exists=.env src/cli/import-sqlite.ts",
+    "gen-key": "node -e \"console.log('k1:'+require('crypto').randomBytes(32).toString('base64'))\"",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@peterhouse/shared": "workspace:*",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.1.0",
+    "pg": "^8.16.3",
+    "puppeteer-core": "^24.22.0",
+    "sharp": "^0.34.4",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^22",
+    "@types/pg": "^8.15.5",
+    "better-sqlite3": "^12.4.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  }
+}

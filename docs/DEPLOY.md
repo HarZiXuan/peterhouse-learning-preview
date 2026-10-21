@@ -51,7 +51,7 @@ Lost access? Use the provider's web console and run `ufw allow 22/tcp`.
 ## 4. Keys and secrets
 On your laptop:
 ```bash
-npm run gen-key -w backend          # → k1:xxxxxxxx…   = DATA_ENCRYPTION_KEYS
+pnpm --filter @peterhouse/backend gen-key          # → k1:xxxxxxxx…   = DATA_ENCRYPTION_KEYS
 openssl rand -hex 24                # → POSTGRES_PASSWORD
 age-keygen -o peterhouse-backup-key.txt   # prints the PUBLIC key (age1…); the file is the PRIVATE key
 ```
@@ -114,7 +114,7 @@ To really restore: add `--into-live` (asks you to type YES, takes a safety copy 
 After a real restore, open a child's record: if it displays, the encryption key matches.
 
 ## 7. Rotating the encryption key
-1. Generate a new key: `npm run gen-key -w backend` → `k2:…`.
+1. Generate a new key: `pnpm --filter @peterhouse/backend gen-key` → `k2:…`.
 2. In `.env.production` put the new key **first** and keep the old one: `DATA_ENCRYPTION_KEYS=k2:NEW,k1:OLD`.
 3. `infra/server/dc.sh up -d backend`. New and edited data is now written with `k2`; existing rows still read with `k1`.
 4. **Never remove `k1` while any row or backup still uses it.** There is no bulk re-encryption command yet; until one exists
