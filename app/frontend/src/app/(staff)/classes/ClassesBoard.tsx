@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Ellipsis, Plus, TriangleAlert } from "lucide-react";
+import { Icon } from "@/components/icons";
 import type { ClassChild, ClassesView, ClassSummary } from "@peterhouse/shared";
 import { CLASS_LEVELS, LEVEL_PROBLEM_TEXT, classLevel } from "@peterhouse/shared";
 import { Button } from "@/components/ui/button";
@@ -12,13 +13,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { cn } from "@/lib/utils";
 import { AddChild } from "../AddChild";
 import { NewClass } from "./NewClass";
-import { LEVEL_COLUMN, Meter, TeacherStack, capacityOf, hasTeacher } from "./shared";
+import { LEVEL_COLUMN, TeacherStack, hasTeacher } from "./shared";
 
 type Item = { key: string; classId: number; label: string; text: ReactNode; action: string };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** What the administrator should look at: children in the wrong level, classes nobody teaches, classes over their ratio. */
+/** What the administrator should look at: children in the wrong level and classes nobody teaches. */
 function attentionItems(view: ClassesView): Item[] {
   const items: Item[] = [];
   for (const p of view.flagged) {
@@ -49,19 +50,6 @@ function attentionItems(view: ClassesView): Item[] {
         text: (
           <>
             <b>{k.name}</b> has no teacher. Only administrators can see it until one is assigned.
-          </>
-        ),
-      });
-    } else if (k.children > k.capacity) {
-      const teachers = (k.lead ? 1 : 0) + k.co.length;
-      items.push({
-        key: `over-${k.id}`,
-        classId: k.id,
-        label: k.name,
-        action: "Add a teacher",
-        text: (
-          <>
-            <b>{k.name}</b> has {plural(k.children, "child", "children")} for {plural(teachers, "teacher", "teachers")}, which is {k.children - k.capacity} over the 1:{classLevel(k.level).ratio} ratio.
           </>
         ),
       });
@@ -97,19 +85,25 @@ function AttentionPanel({ items }: { items: Item[] }) {
   );
 }
 
-function Stat({ value, label, hint, tone }: { value: number; label: string; hint: string; tone?: string }) {
+/** A count that opens the page listing what it counts. */
+function Stat({ icon, value, label, hint, href }: { icon: string; value: number; label: string; hint: string; href: string }) {
   return (
-    <div className="grid gap-0.5 rounded-2xl border bg-card px-5 pb-3.5 pt-4">
-      <span className={cn("font-heading text-4xl font-bold leading-tight", tone)}>{value}</span>
-      <span className="text-sm font-bold text-foreground/80">{label}</span>
+    <Link
+      href={href}
+      className="group grid gap-0.5 rounded-2xl border bg-card px-5 pb-3.5 pt-4 text-foreground outline-none transition-[border-color,box-shadow] hover:border-foreground/25 hover:text-foreground hover:shadow-md focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      <span className="flex items-start justify-between gap-2">
+        <span className="font-heading text-4xl font-bold leading-tight">{value}</span>
+        <ChevronRight className="mt-2 size-5 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden />
+      </span>
+      <span className="flex items-center gap-1.5 text-sm font-bold text-foreground/80"><Icon name={icon} size={16} />{label}</span>
       <span className="text-[13px] text-muted-foreground">{hint}</span>
-    </div>
+    </Link>
   );
 }
 
 function ClassCard({ k, view, flagged }: { k: ClassSummary; view: ClassesView; flagged: ClassChild[] }) {
   const [dialog, setDialog] = useState<"rename" | "add" | null>(null);
-  const cap = capacityOf(k);
   const people = [...(k.lead ? [k.lead] : []), ...k.co];
   const note = flagged.length === 0 ? null : flagged.length === 1 ? (flagged[0].level ? `${flagged[0].name} belongs in ${flagged[0].level}` : `${flagged[0].name}’s birthday needs a check`) : `${flagged.length} children need a level check`;
 
@@ -134,15 +128,9 @@ function ClassCard({ k, view, flagged }: { k: ClassSummary; view: ClassesView; f
         </DropdownMenu>
       </div>
 
-      <div className="grid gap-1.5">
-        <div className="flex items-baseline justify-between text-[13.5px]">
-          <span>
-            <b>{k.children}</b> <span className="text-muted-foreground">{cap.state === "none" ? (k.children === 1 ? "child" : "children") : `of ${k.capacity} places`}</span>
-          </span>
-          <span className={cn("text-[12.5px] font-extrabold", cap.state === "over" ? "text-destructive" : cap.state === "none" ? "text-warn-foreground" : "text-muted-foreground")}>{cap.label}</span>
-        </div>
-        <Meter value={k.children} max={k.capacity} tone={cap.state === "over" ? "over" : "default"} label={`${k.children} of ${k.capacity} places`} />
-      </div>
+      <p className="text-[13.5px]">
+        <b>{k.children}</b> <span className="text-muted-foreground">{k.children === 1 ? "child" : "children"}</span>
+      </p>
 
       <div className="flex min-h-12 items-center gap-2.5 border-t pt-3">
         {people.length > 0 ? (
@@ -216,16 +204,14 @@ export function ClassesBoard({ view }: { view: ClassesView }) {
   const items = attentionItems(view);
   const children = view.classes.reduce((n, k) => n + k.children, 0);
   const placed = new Set(view.classes.flatMap((k) => [...(k.lead ? [k.lead.id] : []), ...k.co.map((c) => c.id)])).size;
-  const free = view.classes.reduce((n, k) => n + Math.max(0, k.capacity - k.children), 0);
   const empty = CLASS_LEVELS.filter((l) => !view.classes.some((k) => k.level === l.key)).length;
 
   return (
     <div className="grid gap-6">
-      <div className="grid grid-cols-2 gap-3.5 min-[1100px]:grid-cols-4">
-        <Stat value={children} label={children === 1 ? "Child" : "Children"} hint={`in ${plural(view.classes.length, "class", "classes")}`} />
-        <Stat value={view.classes.length} label={view.classes.length === 1 ? "Class" : "Classes"} hint={empty ? `${plural(empty, "level has", "levels have")} none yet` : `across all ${CLASS_LEVELS.length} levels`} />
-        <Stat value={placed} label={placed === 1 ? "Teacher" : "Teachers"} hint="placed in a class" />
-        <Stat value={free} label="Places free" hint="for the teachers they have" tone="text-[#2c5f80]" />
+      <div className="grid grid-cols-2 gap-3.5 min-[900px]:grid-cols-3">
+        <Stat icon="children" value={children} label={children === 1 ? "Child" : "Children"} hint={`in ${plural(view.classes.length, "class", "classes")}`} href="/children" />
+        <Stat icon="classes" value={view.classes.length} label={view.classes.length === 1 ? "Class" : "Classes"} hint={empty ? `${plural(empty, "level has", "levels have")} none yet` : `across all ${CLASS_LEVELS.length} levels`} href="#levels" />
+        <Stat icon="teachers" value={placed} label={placed === 1 ? "Teacher" : "Teachers"} hint="placed in a class" href="/teachers" />
       </div>
 
       <AttentionPanel items={items} />
@@ -237,7 +223,7 @@ export function ClassesBoard({ view }: { view: ClassesView }) {
         <ChevronRight className="-ml-2 size-[18px] text-muted-foreground/70" />
       </div>
 
-      <div className="grid items-start gap-3.5 md:grid-cols-2 min-[1280px]:-mt-3 min-[1280px]:grid-cols-5">
+      <div id="levels" className="grid scroll-mt-6 items-start gap-3.5 md:grid-cols-2 min-[1280px]:-mt-3 min-[1280px]:grid-cols-5">
         {CLASS_LEVELS.map((lv) => (
           <LevelColumn key={lv.key} lv={lv} classes={view.classes.filter((k) => k.level === lv.key)} view={view} />
         ))}

@@ -4,7 +4,8 @@ import { many, one, run, tx } from "../db";
 import { HttpError } from "../http";
 import { TAUGHT_BY } from "./staff";
 import { loadAnswersFor, getReviewForUser, getReviewRow, loadAnswers, type ReviewRow } from "./reviews";
-import { areaProgress, readinessGaps } from "@peterhouse/shared";
+import { areaProgress, childPhotoUrl, readinessGaps } from "@peterhouse/shared";
+import { isLead, leadsOf, ownersOf, partRows } from "./parts";
 
 // One semester (term) is open at a time. Its classes, teachers and children are managed in classes.ts.
 
@@ -241,12 +242,30 @@ export async function listChildren(user: SessionUser, pastTermId?: number): Prom
   const reviews = (await Promise.all(rows.map((x) => getReviewRow(x.id)))).filter((r): r is ReviewRow => !!r);
   reviews.sort((a, b) => a.preferred_name.localeCompare(b.preferred_name, undefined, { sensitivity: "base" }) || a.id - b.id);
   const answersByReview = await loadAnswersFor(reviews.map((r) => ({ id: r.id, rubric: r.rubric })));
-  const covers = await many<{ review_id: number; id: number }>(
-    "SELECT DISTINCT ON (review_id) review_id, id FROM review_photos WHERE review_id = ANY($1::bigint[]) ORDER BY review_id, position, id",
-    [reviews.map((r) => r.id)],
-  );
-  const coverOf = new Map(covers.map((c) => [c.review_id, c.id]));
   const submitters = await many<{ id: number; name: string }>("SELECT id, name FROM users WHERE id = ANY($1::bigint[])", [[...new Set(reviews.map((r) => r.submitted_by).filter((x): x is number => !!x))]]);
+  // The report in parts: who rates each area, which parts are in, and whether this person is the lead who finishes it.
+  const classIds = [...new Set(reviews.map((r) => r.class_id))];
+  const areaKeys = [...new Set(reviews.flatMap((r) => r.rubric.areas.map((a) => a.key)))];
+  const owners = await ownersOf(classIds, areaKeys);
+  const parts = await partRows(reviews.map((r) => r.id));
+  const leads = await leadsOf(classIds);
+  const leadOf = new Map<number, boolean>();
+  for (const k of classIds) leadOf.set(k, await isLead(user, k));
+  const partsFor = (r: ReviewRow) => {
+    const own = owners.get(r.class_id)!;
+    const lead = leadOf.get(r.class_id)!;
+    const classLead = leads.get(r.class_id)?.id ?? null;
+    const done = (key: string) => !!parts.find((p) => p.review_id === r.id && p.area_key === key)?.done_at;
+    const partsOpen = !r.taken_over_by && !r.draft && (r.status === "not_started" || r.status === "draft" || r.status === "ready");
+    return {
+      partsOpen,
+      takenOver: !!r.taken_over_by,
+      iAmLead: lead,
+      myParts: lead ? [] : r.rubric.areas.filter((a) => own[a.key]?.id === user.id).map((a) => ({ area: a.shortName, done: done(a.key) })),
+      // Parts another teacher still has to send: what the lead (and the office) is waiting for.
+      waitingFor: !partsOpen ? [] : r.rubric.areas.filter((a) => own[a.key] && own[a.key]!.id !== classLead && !done(a.key)).map((a) => ({ area: a.shortName, teacher: own[a.key]!.name })),
+    };
+  };
   const submitter = new Map(submitters.map((u) => [u.id, u.name]));
   return reviews.map((r) => {
     const answers = answersByReview.get(r.id)!;
@@ -256,13 +275,14 @@ export async function listChildren(user: SessionUser, pastTermId?: number): Prom
     });
     return {
       reviewId: r.id,
+      ...partsFor(r),
       name: r.legal_name,
       chineseName: r.chinese_name,
       answered: areas.reduce((n, a) => n + a.answered, 0),
       total: areas.reduce((n, a) => n + a.total, 0),
       hasReport: !!r.draft,
       areas,
-      coverPhotoId: coverOf.get(r.id) ?? null,
+      photo: childPhotoUrl(r.child_id, r.photo_at),
       classId: r.class_id,
       className: r.class_name,
       status: r.status,

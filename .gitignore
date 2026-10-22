@@ -14,4 +14,15 @@ next-env.d.ts
 dist/
 # Leftovers of the old single-computer version (SQLite data, backups, old env files). Never committed.
 /legacy/
+
+# Secrets and data that must never reach git: the deploy's image choice, private keys, database dumps and backups.
+.deploy.env
+*.key
+*.age
+*.dump
+*.sql.gz
+*backup-key*.txt
+/secrets/
+*.log
+coverage/
 /app/backend/dist/

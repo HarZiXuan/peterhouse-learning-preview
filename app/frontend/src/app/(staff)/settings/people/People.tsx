@@ -51,14 +51,14 @@ function useAct() {
 
 type Open = { open: boolean; onOpenChange: (open: boolean) => void };
 
-/** The button above the table, and its form. */
-export function AddPerson() {
+/** The button above the table, and its form. On the Teachers page (`teacher`) it adds a teacher only. */
+export function AddPerson({ teacher = false }: { teacher?: boolean }) {
   const { busy, act } = useAct();
   const [open, setOpen] = useState(false);
   return (
     <>
       <Button className="h-10 px-5 font-semibold" onClick={() => setOpen(true)}>
-        <Plus /> Add person
+        <Plus /> {teacher ? "Add teacher" : "Add person"}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
@@ -67,7 +67,7 @@ export function AddPerson() {
             onSubmit={async (e) => {
               e.preventDefault();
               const f = new FormData(e.currentTarget);
-              const role = String(f.get("role"));
+              const role = teacher ? "teacher" : String(f.get("role"));
               const done = await act(
                 () => send("POST", "/users", { name: String(f.get("name")), email: String(f.get("email")), role, password: String(f.get("password")) }),
                 role === "teacher" ? "Added. Give them the temporary password, then place them in a class on the Classes page." : "Added. Give them the temporary password; they choose their own at first sign-in.",
@@ -76,7 +76,7 @@ export function AddPerson() {
             }}
           >
             <DialogHeader>
-              <DialogTitle>Add a person</DialogTitle>
+              <DialogTitle>{teacher ? "Add a teacher" : "Add a person"}</DialogTitle>
               <DialogDescription>They sign in with this email and the temporary password, then choose their own.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-2">
@@ -87,13 +87,15 @@ export function AddPerson() {
               <Label htmlFor="p-email">Email</Label>
               <Input id="p-email" type="email" name="email" required autoComplete="off" />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="p-role">Role</Label>
-              <select id="p-role" className={SELECT} name="role" defaultValue="teacher">
-                <option value="teacher">Teacher (sees their own class)</option>
-                <option value="admin">Administrator (sees everything, manages people)</option>
-              </select>
-            </div>
+            {!teacher && (
+              <div className="grid gap-2">
+                <Label htmlFor="p-role">Role</Label>
+                <select id="p-role" className={SELECT} name="role" defaultValue="teacher">
+                  <option value="teacher">Teacher (sees their own class)</option>
+                  <option value="admin">Administrator (sees everything, manages people)</option>
+                </select>
+              </div>
+            )}
             <div className="grid gap-2">
               <Label htmlFor="p-pw">Temporary password</Label>
               <Input id="p-pw" name="password" type="text" minLength={10} required autoComplete="off" />
@@ -281,34 +283,52 @@ function SubjectPills({ user }: { user: UserSummary }) {
 
 type Dialogs = { kind: "edit" | "reset" | "deactivate"; user: UserSummary } | null;
 
-export function People({ initial, meId, defaultRole = "" }: { initial: UserSummary[]; meId: number; defaultRole?: "" | "teacher" | "admin" }) {
+/** Everyone with an account (Settings → People), or with `teachersOnly` just the teachers (the Teachers page). */
+export function People({ initial, meId, teachersOnly = false }: { initial: UserSummary[]; meId: number; teachersOnly?: boolean }) {
   const { busy, act } = useAct();
   const [q, setQ] = useState("");
-  const [role, setRole] = useState<string>(defaultRole);
+  const [role, setRole] = useState<string>(teachersOnly ? "teacher" : "");
+  const [classId, setClassId] = useState("");
   const [dialog, setDialog] = useState<Dialogs>(null);
   const close = (o: boolean) => !o && setDialog(null);
 
   const columns: Column<UserSummary>[] = [
     { key: "name", label: "Name", sort: (u) => u.name },
-    { key: "role", label: "Role", sort: (u) => u.role },
+    ...(teachersOnly ? [] : [{ key: "role", label: "Role", sort: (u: UserSummary) => u.role }]),
     { key: "classes", label: "Classes", sort: (u) => u.classes.map((k) => k.name).join(", ") || "~" },
     { key: "subjects", label: "Subjects", sort: (u) => subjectsOf(u).map((x) => x.name).join(", ") || "~" },
     { key: "login", label: "Last sign-in", sort: (u) => u.lastLoginAt ?? "" },
     { key: "status", label: "Status", sort: (u) => statusOf(u).order },
     { key: "actions", label: "Actions" },
   ];
-  const shown = initial.filter((u) => `${u.name} ${u.email}`.toLowerCase().includes(q.trim().toLowerCase()) && (!role || u.role === role));
+  // Every class someone teaches in, for the class filter.
+  const classes = [...new Map(initial.flatMap((u) => u.classes.map((k) => [k.id, k.name] as const))).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const shown = initial.filter(
+    (u) => `${u.name} ${u.email}`.toLowerCase().includes(q.trim().toLowerCase()) && (!role || u.role === role) && (!classId || u.classes.some((k) => k.id === Number(classId))),
+  );
   const { sorted, sort, toggle } = useSort(shown, columns);
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <SearchBox value={q} onChange={setQ} label="Search people by name or email" />
-        <select aria-label="Role" className={cn(SELECT, "w-auto min-w-40")} value={role} onChange={(e) => setRole(e.target.value)}>
-          <option value="">Everyone</option>
-          <option value="teacher">Teachers</option>
-          <option value="admin">Administrators</option>
-        </select>
+        {!teachersOnly && (
+          <select aria-label="Role" className={cn(SELECT, "w-auto min-w-40")} value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="">Everyone</option>
+            <option value="teacher">Teachers</option>
+            <option value="admin">Administrators</option>
+          </select>
+        )}
+        {classes.length > 0 && (
+          <select aria-label="Class" className={cn(SELECT, "w-auto min-w-40")} value={classId} onChange={(e) => setClassId(e.target.value)}>
+            <option value="">All classes</option>
+            {classes.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {sorted.length === 0 ? (
@@ -335,7 +355,7 @@ export function People({ initial, meId, defaultRole = "" }: { initial: UserSumma
                       </p>
                       <p className="text-[13px] text-muted-foreground">{u.email}</p>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap">{u.role === "admin" ? "Administrator" : "Teacher"}</TableCell>
+                    {!teachersOnly && <TableCell className="whitespace-nowrap">{u.role === "admin" ? "Administrator" : "Teacher"}</TableCell>}
                     <TableCell>
                       {u.role === "admin" ? (
                         <span className="text-muted-foreground">All classes</span>

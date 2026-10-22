@@ -4,9 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowRight, ArrowRightLeft, ChevronRight, Ellipsis, Info, LogOut, Pencil, Plus, Search, Trash2, TriangleAlert, UserRound } from "lucide-react";
-import type { ClassChild, ClassDetail, ClassSummary, LevelProblem, Pronoun, ReviewStatus, StaffRef, SubjectTeacher } from "@peterhouse/shared";
-import { LEVEL_PROBLEM_TEXT, STATUS_LABEL, birthdayRange, classLevel, levelForBirthday } from "@peterhouse/shared";
+import { ArrowRight, ArrowRightLeft, ChevronRight, Ellipsis, LogOut, Pencil, Plus, Search, Trash2, TriangleAlert, UserRound } from "lucide-react";
+import type { ClassChild, ClassDetail, ClassSummary, LevelProblem, Pronoun, ReportStage, StaffRef, SubjectTeacher } from "@peterhouse/shared";
+import { LEVEL_PROBLEM_TEXT, REPORT_STAGES, STAGE_LABEL, STATUS_LABEL, birthdayRange, stageOf, classLevel, levelForBirthday } from "@peterhouse/shared";
 import { adminSend } from "@/lib/admin-client";
 import { ChildAvatar, initials } from "@/components/ui";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -25,7 +25,7 @@ import { SUBJECT_SWATCH } from "@/lib/calendar";
 import { cn } from "@/lib/utils";
 import { SELECT } from "../../AddChild";
 import { removeChildAction } from "../../actions";
-import { Meter, STATUS_FILL, STATUS_ORDER, STATUS_TONE, TeacherStack, capacityOf, personTint } from "../shared";
+import { STAGE_FILL, STATUS_TONE, TeacherStack, personTint } from "../shared";
 
 /** Runs one admin request, shows the outcome, and refreshes the page on success. */
 function useAct() {
@@ -200,7 +200,6 @@ export function ClassTeachers({ detail, teachers, classes }: { detail: ClassDeta
   const [picker, setPicker] = useState(false);
   const [q, setQ] = useState("");
   const [setting, setSetting] = useState<SubjectTeacher | null>(null);
-  const ratio = classLevel(detail.level).ratio;
   const people = [...(detail.lead ? [{ ...detail.lead, isLead: true }] : []), ...detail.co.map((c) => ({ ...c, isLead: false }))];
   const here = new Set(people.map((p) => p.id));
   const prev = { leadId: detail.lead?.id ?? null, coIds: detail.co.map((c) => c.id) };
@@ -239,7 +238,6 @@ export function ClassTeachers({ detail, teachers, classes }: { detail: ClassDeta
     .filter((t) => !here.has(t.id) && t.name.toLowerCase().includes(q.trim().toLowerCase()))
     .map((t) => ({ t, in: taughtIn(t) }))
     .sort((a, b) => a.in.length - b.in.length);
-  const full = detail.capacity > 0 && detail.children >= detail.capacity;
 
   return (
     <Card className="gap-4 shadow-none">
@@ -307,15 +305,6 @@ export function ClassTeachers({ detail, teachers, classes }: { detail: ClassDeta
                 ))}
               </ul>
             )}
-
-            <p className="flex items-start gap-2.5 rounded-lg bg-[#eef6fb] px-3.5 py-3 text-sm text-[#0a3a57]">
-              <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <span>
-                <b>Why does this matter?</b> Every teacher adds room for {ratio} children in {classLevel(detail.level).name}.{" "}
-                {people.length > 0 ? `With ${people.length === 1 ? "1 teacher" : `${people.length} teachers`}, this class can take up to ${ratio * people.length}.` : "Add a teacher to give this class room for children."}
-                {full ? " It is full now, so add a teacher to take another child." : ""}
-              </span>
-            </p>
 
             <Popover open={picker} onOpenChange={(o) => (setPicker(o), !o && setQ(""))}>
               <PopoverTrigger asChild>
@@ -427,19 +416,70 @@ function SubjectTeacherDialog({ detail, teacher, available, isStaff = false, onC
   );
 }
 
+/** The stages that count as done (sent for review), furthest along first. */
+const SENT: ReportStage[] = ["approved", "submitted", "changes_requested"];
+
 /** The class in three plain boxes: how many children, who teaches, how far the learning reports are. */
+/**
+ * Who rates each learning area of this class's reports. Each teacher rates their own areas, checks the paragraph the
+ * AI writes and sends it to the lead teacher, who puts the report together. An area left on the lead stays with them.
+ */
+export function AreaTeachers({ detail }: { detail: ClassDetail }) {
+  const { busy, act } = useAct();
+  const people: StaffRef[] = [...(detail.lead ? [detail.lead] : []), ...detail.co, ...detail.subjectTeachers];
+  const leadLabel = detail.lead ? `${detail.lead.name} (lead)` : "The class teachers";
+  return (
+    <Card className="mt-6 gap-0 py-0 shadow-none">
+      <CardHeader className="border-b py-4">
+        <CardTitle className="font-heading text-lg">Who rates each area</CardTitle>
+        <CardDescription>
+          Starts on the teacher tagged with that subject, otherwise the lead. Each teacher rates their areas, checks the paragraph and sends it to the lead, who sends the whole report for review.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 py-4">
+        {detail.areaTeachers.map((a) => (
+          <label key={a.key} className="grid gap-1.5 text-sm font-semibold">
+            {a.name}
+            <select
+              className={SELECT}
+              disabled={busy || people.length === 0}
+              value={a.source === "set" && a.teacher ? String(a.teacher.id) : ""}
+              onChange={(e) => {
+                const userId = e.target.value ? Number(e.target.value) : null;
+                const who = userId ? people.find((p) => p.id === userId)?.name : "Whoever teaches it (else the lead)";
+                void act(() => adminSend("PUT", `/classes/${detail.id}/area-teachers/${a.key}`, { userId }), `${a.name}: ${who} rates it now.`);
+              }}
+            >
+              {/* Not set: the teacher tagged with the matching subject, else the lead. */}
+              <option value="">
+                {a.source === "subject" && a.teacher
+                  ? `${a.teacher.name} (teaches it)`
+                  : a.source === "lead"
+                    ? leadLabel
+                    : "Automatic: whoever teaches it, else the lead"}
+              </option>
+              {people
+                .filter((p) => !(a.source !== "set" && p.id === a.teacher?.id))
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ClassGlance({ detail }: { detail: ClassDetail }) {
   const active = detail.pupils.filter((p) => !p.left);
-  const counts = Object.fromEntries(STATUS_ORDER.map((s) => [s, active.filter((p) => p.status === s).length])) as Record<ReviewStatus, number>;
-  const written = counts.written + counts.submitted + counts.changes_requested + counts.approved;
-  const cap = capacityOf({ children: active.length, capacity: detail.capacity });
-  const ratio = classLevel(detail.level).ratio;
+  const counts = Object.fromEntries(REPORT_STAGES.map((s) => [s, active.filter((p) => stageOf(p.status) === s).length])) as Record<ReportStage, number>;
+  const written = counts.submitted + counts.changes_requested + counts.approved;
   const people = [...(detail.lead ? [detail.lead] : []), ...detail.co];
   const co = detail.co.map((c) => c.name);
   const label = "text-xs font-extrabold uppercase tracking-widest text-muted-foreground";
-  const roomText =
-    cap.state === "none" ? "No teacher yet, so the class has no room set." : cap.state === "over" ? `${active.length - detail.capacity} more than the class can take.` : cap.state === "full" ? "This class is full." : `Room for ${detail.capacity - active.length} more.`;
-  const breakdown = [...STATUS_ORDER].reverse().filter((s) => counts[s] > 0).map((s) => `${counts[s]} ${STATUS_LABEL[s].toLowerCase()}`);
   return (
     <section aria-label="This class at a glance" className="grid gap-4 md:grid-cols-3">
       <Card className="gap-2.5 rounded-[20px] px-[22px] py-5 shadow-none">
@@ -448,12 +488,8 @@ export function ClassGlance({ detail }: { detail: ClassDetail }) {
           <span className="font-heading text-[44px] font-bold leading-none">{active.length}</span>
           <span className="font-bold text-foreground/80">in this class</span>
         </p>
-        <Meter value={active.length} max={detail.capacity} tone={cap.state === "over" ? "over" : "default"} label={`${active.length} children, room for ${detail.capacity}`} className="h-2" />
-        <p className="text-sm">
-          <b className={cn(cap.state === "over" && "text-destructive")}>{roomText}</b>{" "}
-          <span className="text-muted-foreground">
-            Each teacher can look after {ratio} children{people.length > 0 ? `, and this class has ${people.length === 1 ? "1 teacher" : `${people.length} teachers`}.` : "."}
-          </span>
+        <p className="text-sm text-muted-foreground">
+          {classLevel(detail.level).name} · born in {detail.birthYear}
         </p>
       </Card>
 
@@ -485,16 +521,29 @@ export function ClassGlance({ detail }: { detail: ClassDetail }) {
           <span className="font-heading text-[44px] font-bold leading-none">
             {written} <span className="text-2xl text-muted-foreground">of {active.length}</span>
           </span>
-          <span className="font-bold text-foreground/80">written</span>
+          <span className="font-bold text-foreground/80">sent for review</span>
+          <span className="ml-auto font-heading text-2xl font-bold tabular-nums text-success">{active.length ? Math.round((written / active.length) * 100) : 0}%</span>
         </p>
-        <div role="img" aria-label={STATUS_ORDER.map((s) => `${counts[s]} ${STATUS_LABEL[s].toLowerCase()}`).join(", ")} className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-border">
-          {[...STATUS_ORDER].reverse().filter((s) => counts[s] > 0 && s !== "not_started").map((s) => (
-            <div key={s} className="h-full" style={{ width: `${(counts[s] / Math.max(1, active.length)) * 100}%`, background: STATUS_FILL[s] }} />
+        {/* Only reports sent for review fill the bar; what is still with the teachers is the empty track. */}
+        <div role="img" aria-label={`${written} of ${active.length} learning reports sent for review`} className="flex h-3 gap-0.5 overflow-hidden rounded-full bg-secondary">
+          {SENT.filter((s) => counts[s] > 0).map((s) => (
+            <div key={s} className="h-full first:rounded-l-full" style={{ width: `${(counts[s] / Math.max(1, active.length)) * 100}%`, background: STAGE_FILL[s] }} />
           ))}
         </div>
-        <p className="text-sm">
-          <b>{breakdown.length ? breakdown.join(" · ") : "No reports yet"}</b> <span className="text-muted-foreground">Each child gets one learning report every semester.</span>
-        </p>
+        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          {SENT.filter((s) => counts[s] > 0).map((s) => (
+            <li key={s} className="inline-flex items-center gap-1.5">
+              <span className="size-2.5 rounded-full" style={{ background: STAGE_FILL[s] }} aria-hidden />
+              <b>{counts[s]}</b> {STAGE_LABEL[s].toLowerCase()}
+            </li>
+          ))}
+          {active.length - written > 0 && (
+            <li className="inline-flex items-center gap-1.5 text-muted-foreground">
+              <span className="size-2.5 rounded-full border border-foreground/25 bg-secondary" aria-hidden />
+              <b className="text-foreground">{active.length - written}</b> still with teachers
+            </li>
+          )}
+        </ul>
       </Card>
     </section>
   );
@@ -537,7 +586,6 @@ function MoveChild({ child, classes, detail, open, onOpenChange }: { child: Clas
           ) : (
             <RadioGroup value={target ? String(target.id) : ""} onValueChange={(v) => setTo(Number(v))} aria-label="New class" className="grid gap-2.5">
               {others.map((k) => {
-                const cap = capacityOf({ children: k.children + 1, capacity: k.capacity });
                 const teachers = [...(k.lead ? [k.lead] : []), ...k.co].map((t) => t.name).join(", ");
                 return (
                   <Label
@@ -550,11 +598,8 @@ function MoveChild({ child, classes, detail, open, onOpenChange }: { child: Clas
                       <span className="block font-heading text-lg font-semibold">{k.name}</span>
                       <span className="block truncate text-[13px] text-muted-foreground">{teachers || "No teacher yet"}</span>
                     </span>
-                    <span className="text-right leading-snug">
-                      <span className="block text-sm font-semibold">
-                        {k.children} of {k.capacity || "—"}
-                      </span>
-                      <span className={cn("block text-[13px] font-bold", cap.state === "over" ? "text-destructive" : "text-muted-foreground")}>{cap.state === "over" ? `Would be ${k.children + 1 - k.capacity} over` : cap.state === "none" ? "No teacher yet" : `${k.capacity - k.children} free`}</span>
+                    <span className="text-sm font-semibold">
+                      {k.children} {k.children === 1 ? "child" : "children"}
                     </span>
                   </Label>
                 );
@@ -592,7 +637,7 @@ function ChildRow({ child, detail, classes }: { child: ClassChild; detail: Class
 
   return (
     <li className={cn("flex flex-wrap items-center gap-x-4 gap-y-2 border-t px-4 py-3.5 sm:px-6", misplaced && "bg-warn/10")}>
-      <ChildAvatar name={child.name} size={44} />
+      <ChildAvatar src={child.photo} name={child.name} size={44} />
       <div className="min-w-0 flex-1 basis-48 leading-snug">
         <p className="flex flex-wrap items-baseline gap-x-2.5">
           {child.left ? (

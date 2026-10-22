@@ -9,7 +9,7 @@ import { HttpError, idParam, parse } from "../http";
 import { createUser, listUsers, resetPassword, unlockUser, updateUser } from "../domain/users";
 import { approvalExtras, approvalsView, approve, periodsView, requestChanges, takeOver } from "../domain/approval";
 import { childProfile, updateChildInfo } from "../domain/children";
-import { addChild, classDetail, classesView, createClass, deleteClass, moveChild, setChildLeft, setClassStaff, setSubjectTeacher, updateChild, updateClass } from "../domain/classes";
+import { addChild, classDetail, classesView, createClass, deleteClass, moveChild, setAreaTeacher, setChildLeft, setClassStaff, setSubjectTeacher, updateChild, updateClass } from "../domain/classes";
 import {
   addQuestion,
   setQuestionLevels,
@@ -115,8 +115,8 @@ adminRouter.post("/questions/:key/restore", async (req, res) => {
 });
 
 adminRouter.post("/questions/:key/move", async (req, res) => {
-  const { direction } = parse(z.object({ direction: z.enum(["up", "down"]) }), req.body);
-  await moveQuestion(req, currentUser(req), req.params.key, direction);
+  const { direction, level } = parse(z.object({ direction: z.enum(["up", "down"]), level: z.enum(CLASS_LEVEL_KEYS as [ClassLevel, ...ClassLevel[]]).optional() }), req.body);
+  await moveQuestion(req, currentUser(req), req.params.key, direction, level);
   res.json({ ok: true });
 });
 
@@ -178,6 +178,14 @@ adminRouter.put("/classes/:id/staff", async (req, res) => {
 });
 
 // A subject teacher of a class and the subjects they teach there (change 12). No subjects takes them off the class.
+adminRouter.put("/classes/:id/area-teachers/:area", async (req, res) => {
+  const id = idParam(req.params.id);
+  const { userId } = parse(z.object({ userId: z.number().int().positive().nullable() }), req.body);
+  await setAreaTeacher(id, req.params.area, userId);
+  await audit(req, currentUser(req).id, "class.area_teacher", { detail: `#${id} ${req.params.area}` });
+  res.json({ ok: true });
+});
+
 adminRouter.put("/classes/:id/subject-teachers/:userId", async (req, res) => {
   const id = idParam(req.params.id);
   const userId = idParam(req.params.userId);

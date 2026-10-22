@@ -8,6 +8,7 @@ import { QuestionsEditor } from "../questions/QuestionsEditor";
 import { TeacherReports } from "./TeacherReports";
 import { Timeline } from "./Timeline";
 import { ReviewQueue, type QueueParams } from "./ReviewQueue";
+import { Icon } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <p className="text-sm text-muted-foreground">
           {past ? `${reportPeriod(past.season, past.year)} · past period` : `${reportPeriod(info.period.season, info.period.year)} · teachers write, you approve`}
         </p>
-        <h1 className="font-heading text-3xl font-bold tracking-tight md:text-4xl">Reports</h1>
+        <h1 className="flex items-center gap-3 font-heading text-3xl font-bold tracking-tight md:text-4xl"><Icon name="reports" size={30} />Reports</h1>
         <p className="mt-1 max-w-xl text-muted-foreground">
           {questions
             ? "The questions teachers answer for each child. Edit them here, then publish."
@@ -59,7 +60,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       </nav>
 
       {bank && area ? (
-        <QuestionsEditor bank={bank} areaKey={area} published={sp.published ? Number(sp.published) : null} set={CLASS_LEVEL_KEYS.includes(sp.set as ClassLevel) ? (sp.set as ClassLevel) : "all"} />
+        <QuestionsEditor bank={bank} areaKey={area} published={sp.published ? Number(sp.published) : null} set={CLASS_LEVEL_KEYS.includes(sp.set as ClassLevel) ? (sp.set as ClassLevel) : "PG"} />
       ) : (
         <>
           {periods && shown && <Timeline periods={periods} selected={shown.termId} />}

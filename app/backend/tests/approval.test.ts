@@ -45,7 +45,9 @@ describe("teachers write, the administrator approves", () => {
     await expect(R.editParagraph(admin, id, "opening", "Admin wording")).rejects.toMatchObject({ status: 409, code: "locked" });
     await expect(A.submitForReview(admin, id)).rejects.toMatchObject({ status: 403 });
 
-    expect(await A.submitForReview(tan, id)).toMatchObject({ version: 1 });
+    // Only the lead teacher sends it; the co-teacher sends their own parts to the lead.
+    await expect(A.submitForReview(tan, id)).rejects.toMatchObject({ status: 403 });
+    expect(await A.submitForReview(lim, id)).toMatchObject({ version: 1 });
     wf = await A.workflowFor(lim, (await R.getReviewRow(id))!);
     expect(wf).toMatchObject({ status: "submitted", versions: 1, canTakeBack: true, canSubmit: false });
     expect(wf.locked).toMatch(/waiting for review/);

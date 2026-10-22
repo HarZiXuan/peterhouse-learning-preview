@@ -16,7 +16,7 @@ export default async function PeriodPage({ searchParams }: { searchParams: Promi
   const parts = [
     counts.waiting && `${counts.waiting} waiting for review`,
     counts.changes && `${counts.changes} with changes requested`,
-    counts.not_submitted && `${counts.not_submitted} not sent yet`,
+    counts.not_submitted && `${counts.not_submitted} still with teachers`,
   ].filter(Boolean);
   const now = reportPeriod(period.season, period.year);
   const sem = (season: string) => (season === "June" ? 1 : 2);

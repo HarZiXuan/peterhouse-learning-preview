@@ -7,6 +7,7 @@ import type { ReportData } from "@peterhouse/shared";
 import type { SchoolDetails } from "@peterhouse/shared";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { editTextAction, rewriteSectionAction } from "../../../actions";
@@ -49,6 +50,21 @@ export function ReportWorkbench({
   const [msg, setMsg] = useState<Record<string, string>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [, start] = useTransition();
+  // The paragraph being written again: its new wording arrives with the refreshed page, and replaces what the box shows.
+  const rewriting = useRef<string | null>(null);
+  /** Whether the busy paragraph is being written again (rather than saved). */
+  const [busyWriting, setBusyWriting] = useState(false);
+  useEffect(() => {
+    const fresh = Object.fromEntries(sections.map((sec) => [sec.key, sec.text]));
+    const key = rewriting.current;
+    rewriting.current = null;
+    // Unsaved edits elsewhere stay; a paragraph nobody is editing, or the one just written again, takes the new wording.
+    setSaved((old) => {
+      setTexts((t) => Object.fromEntries(Object.keys(fresh).map((k) => [k, k === key || t[k] === old[k] ? fresh[k] : t[k]])));
+      return fresh;
+    });
+    if (key) setBusyKey((b) => (b === key ? null : b));
+  }, [sections]);
   const previewRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(0.7);
 
@@ -141,9 +157,11 @@ export function ReportWorkbench({
   };
 
   const titleOf = (key: string) => sections.find((s) => s.key === key)?.title ?? "Paragraph";
-  const save = (key: string) =>
+  // "Busy" is set before the transition starts: updates made inside a transition only show once it has finished.
+  const save = (key: string) => {
+    setBusyWriting(false);
+    setBusyKey(key);
     start(async () => {
-      setBusyKey(key);
       const res = await editTextAction(reviewId, key, texts[key]);
       setBusyKey(null);
       if (res.ok) setSaved((s) => ({ ...s, [key]: texts[key] }));
@@ -152,16 +170,29 @@ export function ReportWorkbench({
       else toast.error(res.error);
       router.refresh();
     });
-  const rewrite = (key: string) =>
+  };
+  // "Write this part again" first asks what to change, so the new version is not just the same facts reworded.
+  const [askFor, setAskFor] = useState<string | null>(null);
+  const writing = busyWriting ? busyKey : null;
+  const [request, setRequest] = useState("");
+  const rewrite = (key: string, ask = "") => {
+    setAskFor(null);
+    setBusyWriting(true);
+    setBusyKey(key);
+    setMsg((m) => ({ ...m, [key]: "" }));
     start(async () => {
-      setBusyKey(key);
-      const res = await rewriteSectionAction(reviewId, key);
-      setBusyKey(null);
+      const res = await rewriteSectionAction(reviewId, key, undefined, ask);
       setMsg((m) => ({ ...m, [key]: res.ok ? "Written again ✓" : res.error }));
-      if (res.ok) toast.success(`“${titleOf(key)}” written again. Read it through before sending.`);
-      else toast.error(res.error);
+      if (!res.ok) {
+        setBusyKey(null);
+        return void toast.error(res.error);
+      }
+      toast.success(`“${titleOf(key)}” written again. Read it through before sending.`);
+      // Stay busy until the new wording is on screen (the effect above clears it).
+      rewriting.current = key;
       router.refresh();
     });
+  };
 
   return (
     <div className="wb">
@@ -182,6 +213,37 @@ export function ReportWorkbench({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <Dialog open={askFor !== null} onOpenChange={(o) => !o && setAskFor(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <form
+            className="grid gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (askFor) rewrite(askFor, request);
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Write “{askFor ? titleOf(askFor) : ""}” again</DialogTitle>
+              <DialogDescription>Tell the AI what to change, add or mention. It keeps your ratings and the rest of the report as they are.</DialogDescription>
+            </DialogHeader>
+            <Textarea
+              autoFocus
+              rows={4}
+              maxLength={500}
+              value={request}
+              onChange={(e) => setRequest(e.target.value)}
+              placeholder={"e.g. Mention that he loves the drawing corner.\nSay more about what he still finds hard.\nMake it shorter and simpler."}
+            />
+            <p className="small muted">Leave it empty to just word it differently. Don’t type another child’s name; names are removed before anything is sent.</p>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setAskFor(null)}>
+                Cancel
+              </Button>
+              <Button type="submit">{request.trim() ? "Write it with this" : "Just word it differently"}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <div className="wb-preview" ref={previewRef}>
         <div style={{ zoom }}>
           <Report data={data} school={school} isDraft={false} reportDate={new Date(reportDateIso)} edits={texts} active={active} onPick={pickFromReport} />
@@ -205,26 +267,46 @@ export function ReportWorkbench({
               </button>
               <label className="grid gap-1.5 text-sm font-medium">
                 <span className="sr-only">{s.title}</span>
+                <span className="relative block">
                 <Textarea
                   rows={s.key === "home" ? 4 : 7}
                   value={texts[s.key] ?? ""}
-                  readOnly={!!locked}
+                  readOnly={!!locked || busy}
+                  aria-busy={busy}
+                  className={writing === s.key ? "opacity-40" : undefined}
                   onFocus={() => select(s.key)}
                   onChange={(e) => setTexts((t) => ({ ...t, [s.key]: e.target.value }))}
                 />
+                {writing === s.key && (
+                  <span className="absolute inset-0 grid place-items-center" role="status">
+                    <span className="flex items-center gap-2 rounded-full border bg-card px-3.5 py-1.5 text-sm font-semibold shadow-sm">
+                      <span className="size-4 animate-spin rounded-full border-2 border-muted border-t-primary" />
+                      Writing…
+                    </span>
+                  </span>
+                )}
+                </span>
               </label>
               <div className="row" style={{ marginTop: 8 }} hidden={!!locked}>
                 <Button size="sm" disabled={!dirty || busy || !!locked} onClick={() => save(s.key)}>
                   Save
                 </Button>
                 {s.key !== "home" && (
-                  <Button variant="outline" size="sm" disabled={busy || !!locked} onClick={() => rewrite(s.key)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy || !!locked}
+                    onClick={() => {
+                      setRequest("");
+                      setAskFor(s.key);
+                    }}
+                  >
                     Write this part again
                   </Button>
                 )}
                 <span className="small muted row" style={{ gap: 8 }} aria-live="polite">
-                  {busy && <span className="size-4 animate-spin rounded-full border-2 border-muted border-t-primary" aria-hidden />}
-                  {busy ? "Working…" : dirty ? "Not saved yet" : (msg[s.key] ?? "")}
+                  {/* While writing, the badge on the paragraph is the one sign of it. */}
+                  {busy ? (writing === s.key ? "" : "Saving…") : dirty ? "Not saved yet" : (msg[s.key] ?? "")}
                 </span>
               </div>
             </div>

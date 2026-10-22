@@ -1,6 +1,7 @@
 // A child's profile: their details, every semester they were at school, and the school's information about them
 // (parents, notes). Only an administrator reads or changes it.
 import type { ChildInfo, ChildProfile, ChildSemester, ClassLevel, Guardian, Pronoun, ReviewStatus } from "@peterhouse/shared";
+import { childPhotoUrl } from "@peterhouse/shared";
 import { many, one, run } from "../db";
 import { notFound } from "../http";
 import { openJson, openText, sealJson, sealText } from "./records";
@@ -20,7 +21,8 @@ export async function childProfile(id: number): Promise<ChildProfile> {
     joined_on: string;
     guardians: string;
     notes: string;
-  }>("SELECT id, preferred_name, last_name, legal_name, chinese_name, date_of_birth, pronoun, status, left_at, joined_on::text AS joined_on, guardians, notes FROM children WHERE id = $1", [id]);
+    photo_at: string | null;
+  }>("SELECT id, preferred_name, last_name, legal_name, chinese_name, date_of_birth, pronoun, status, left_at, joined_on::text AS joined_on, guardians, notes, photo_at FROM children WHERE id = $1", [id]);
   if (!c) throw notFound("This child");
   const { termId } = await workspace();
   const rows = await many<{ id: number; term_id: number; year: number; semester: 1 | 2; class_id: number; class_name: string; level: ClassLevel; status: ReviewStatus; has_report: boolean; approved_at: string | null; teachers: string[] | null }>(
@@ -56,6 +58,7 @@ export async function childProfile(id: number): Promise<ChildProfile> {
     pronoun: c.pronoun,
     left: c.status === "left",
     leftAt: c.left_at,
+    photo: childPhotoUrl(c.id, c.photo_at),
     joinedOn: c.joined_on,
     guardians: c.guardians ? openJson<Guardian[]>(c.guardians, "children.guardians") : [],
     notes: openText(c.notes, "children.notes"),

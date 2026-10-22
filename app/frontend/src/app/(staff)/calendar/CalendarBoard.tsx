@@ -3,7 +3,8 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { CalendarEvent, CalendarView } from "@peterhouse/shared";
+import type { CalendarEvent, CalendarView, ClassLevel } from "@peterhouse/shared";
+import { CLASS_LEVELS } from "@peterhouse/shared";
 import { Icon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -33,13 +34,12 @@ import {
   relativeDay,
   shortDate,
   time,
-  weekday,
   whenText,
 } from "@/lib/calendar";
 import { cn } from "@/lib/utils";
 import { SELECT } from "../AddChild";
 import { CalendarLinkCard } from "./CalendarLinkCard";
-import { EventDialog } from "./EventDialog";
+import { EventDetails, EventDialog } from "./EventDialog";
 
 export type CalendarMode = "upcoming" | "week" | "month" | "timetable";
 
@@ -47,6 +47,10 @@ type Props = {
   mode: CalendarMode;
   anchor: string;
   data: CalendarView;
+  /** Every class this person can see, before a level narrows `data`. */
+  allClasses: CalendarView["classes"];
+  /** The level chosen in the filter, or null for every level. */
+  level: ClassLevel | null;
   admin: boolean;
   classId: number | null;
   linkPath: string;
@@ -54,7 +58,11 @@ type Props = {
   timetable?: ReactNode;
 };
 
-/** One entry as a small block. The administrator can open it to change it. */
+/** Who teaches a lesson, or "" when nobody is named on it. */
+const teacherName = (data: CalendarView, l: CalendarView["lessons"][number]) =>
+  (l.teacherId && data.teachers.find((t) => t.id === l.teacherId)?.name) || "";
+
+/** One entry as a small block. The administrator opens it to change it; a teacher, to read it. */
 function Entry({
   e,
   data,
@@ -97,7 +105,7 @@ function Entry({
       type="button"
       className={cls}
       onClick={() => onOpen(e)}
-      title={`Change “${e.title}”`}
+      title={e.title}
     >
       {body}
     </button>
@@ -123,7 +131,6 @@ function DayHours({
 }) {
   if (data.events.some((e) => e.kind === "closure" && onDay(e, iso)))
     return null;
-  const wd = weekday(iso);
   const one =
     classId ?? (data.classes.length === 1 ? data.classes[0].id : null);
   if (one !== null) {
@@ -259,6 +266,11 @@ function DayHours({
                             {time(l.start)}–{time(l.end)}
                           </span>
                           <span className="font-semibold">{sub?.name}</span>
+                          {teacherName(data, l) && (
+                            <span className="text-muted-foreground">
+                              · {teacherName(data, l)}
+                            </span>
+                          )}
                           {l.room && (
                             <span className="text-muted-foreground">
                               · {l.room}
@@ -416,6 +428,11 @@ function Week({
                                   {time(l.start)}–{time(l.end)}
                                   {l.room && ` · ${l.room}`}
                                 </span>
+                                {teacherName(data, l) && (
+                                  <span className="block truncate opacity-80">
+                                    {teacherName(data, l)}
+                                  </span>
+                                )}
                               </li>
                             );
                           })}
@@ -637,6 +654,8 @@ export function CalendarBoard({
   mode,
   anchor,
   data,
+  allClasses,
+  level,
   admin,
   classId,
   linkPath,
@@ -649,9 +668,12 @@ export function CalendarBoard({
     view?: string;
     date?: string;
     class?: string | null;
+    level?: string | null;
   }) => {
     const p = new URLSearchParams();
     p.set("view", over.view ?? mode);
+    const lv = over.level === undefined ? level : over.level;
+    if (lv) p.set("level", lv);
     const date = over.date ?? anchor;
     if (date !== data.today) p.set("date", date);
     const cls =
@@ -681,9 +703,13 @@ export function CalendarBoard({
         : mode === "upcoming"
           ? "The next four weeks"
           : `${shortDate(monday)} – ${shortDate(addDays(monday, 4))}`;
-  const open = admin ? (e: CalendarEvent) => setEditing(e) : undefined;
+  const levels = CLASS_LEVELS.filter((l) => allClasses.some((k) => k.level === l.key));
+  const [viewing, setViewing] = useState<CalendarEvent | null>(null);
+  // The administrator changes an entry; a teacher opens it to read the details.
+  const open = admin ? (e: CalendarEvent) => setEditing(e) : (e: CalendarEvent) => setViewing(e);
   const tabs: { key: Exclude<CalendarMode, "timetable">; label: string }[] = [
-    { key: "upcoming", label: "Upcoming" },
+    // The administrator plans by week and month; the Upcoming list is the teachers' view.
+    ...(admin ? [] : [{ key: "upcoming" as const, label: "My upcoming events" }]),
     { key: "week", label: "Week" },
     { key: "month", label: "Month" },
   ];
@@ -709,16 +735,35 @@ export function CalendarBoard({
             {editingTimetable
               ? admin
                 ? "Each class’s usual week of lessons. You can also change a single week."
-                : "The weekly lessons of your classes"
+                : "The lessons you teach each week"
               : admin
                 ? "You manage it; staff see their own classes"
-                : "Your classes and the whole school"}
+                : "Your lessons, your classes’ events and the whole school’s"}
           </p>
-          <h1 className="font-heading text-3xl font-bold tracking-tight md:text-4xl">
-            {editingTimetable ? "Edit timetable" : "Calendar"}
+          <h1 className="flex items-center gap-3 font-heading text-3xl font-bold tracking-tight md:text-4xl">
+            <Icon name={editingTimetable ? "timetable" : "calendar"} size={30} />
+            {editingTimetable ? (admin ? "Edit timetable" : "My timetable") : admin ? "Calendar" : "My calendar"}
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {mode !== "timetable" && levels.length > 1 && (
+            <select
+              aria-label="Level"
+              className={cn(SELECT, "w-auto min-w-40")}
+              value={level ?? ""}
+              onChange={(e) =>
+                // A class of another level is no longer a choice, so the class filter starts again.
+                router.push(href({ level: e.target.value || null, class: null }))
+              }
+            >
+              <option value="">All levels</option>
+              {levels.map((l) => (
+                <option key={l.key} value={l.key}>
+                  {l.key} · {l.name}
+                </option>
+              ))}
+            </select>
+          )}
           {mode !== "timetable" && data.classes.length > 1 && (
             <select
               aria-label="Class"
@@ -729,7 +774,7 @@ export function CalendarBoard({
               }
             >
               <option value="">
-                {admin ? "All classes" : "All my classes"}
+                {level ? `All ${level} classes` : admin ? "All classes" : "All my classes"}
               </option>
               {data.classes.map((k) => (
                 <option key={k.id} value={k.id}>
@@ -744,7 +789,7 @@ export function CalendarBoard({
                 href={`/calendar?view=timetable${classId ? `&class=${classId}` : ""}`}
               >
                 <Icon name="timetable" size={16} />{" "}
-                {admin ? "Edit timetable" : "Timetable"}
+                {admin ? "Edit timetable" : "My timetable"}
               </Link>
             </Button>
           )}
@@ -842,10 +887,11 @@ export function CalendarBoard({
         <CalendarLinkCard path={linkPath} admin={admin} />
       )}
 
+      {viewing && <EventDetails event={viewing} classes={allClasses} onClose={() => setViewing(null)} />}
       {editing && (
         <EventDialog
           key={editing === "new" ? "new" : editing.id}
-          classes={data.classes}
+          classes={allClasses}
           today={anchor < data.today ? data.today : anchor}
           event={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}

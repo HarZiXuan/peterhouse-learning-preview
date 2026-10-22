@@ -5,7 +5,7 @@
 // never change a past or in-progress report. Question keys are permanent: rewording keeps the key (scores still
 // compare across semesters), a different skill gets a new key (no misleading comparison).
 
-import type { Area, AuditEntry, ClassLevel, DraftDomain, QuestionBankView, QuestionChange, Rubric, SessionUser } from "@peterhouse/shared";
+import type { Area, AreaLanguage, AuditEntry, ClassLevel, DraftDomain, QuestionBankView, QuestionChange, Rubric, SessionUser } from "@peterhouse/shared";
 import { CLASS_LEVEL_KEYS, DEFAULT_RUBRIC, NEVER_USE, QUESTIONS_MAX, QUESTIONS_MIN, SCALE, askedAt, normaliseRubric } from "@peterhouse/shared";
 import { audit } from "../audit";
 import { many, one, pool, run, tx, type Db } from "../db";
@@ -19,6 +19,7 @@ type DomainRow = {
   short_name: string;
   sub_name: string | null;
   icon: string | null;
+  language: AreaLanguage;
   position: number;
   love_key: string | null;
   love_text: string | null;
@@ -55,9 +56,9 @@ async function seed() {
     if (!(await one("SELECT 1 FROM domains LIMIT 1", [], c))) {
       for (const [i, a] of DEFAULT_RUBRIC.areas.entries()) {
         const d = await one<{ id: number }>(
-          `INSERT INTO domains (key, name, short_name, sub_name, icon, position, love_key, love_text, home_ideas)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb) RETURNING id`,
-          [a.key, a.name, a.shortName, a.subName ?? null, a.icon ?? null, i, a.love?.key ?? null, a.love?.text ?? null, a.homeIdeas ? JSON.stringify(a.homeIdeas) : null],
+          `INSERT INTO domains (key, name, short_name, sub_name, icon, language, position, love_key, love_text, home_ideas)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb) RETURNING id`,
+          [a.key, a.name, a.shortName, a.subName ?? null, a.icon ?? null, a.language ?? "en", i, a.love?.key ?? null, a.love?.text ?? null, a.homeIdeas ? JSON.stringify(a.homeIdeas) : null],
           c,
         );
         for (const [j, s] of a.skills.entries()) {
@@ -84,6 +85,7 @@ function toArea(d: DomainRow, qs: QuestionRow[]): Area {
     shortName: d.short_name,
     ...(d.sub_name ? { subName: d.sub_name } : {}),
     ...(d.icon ? { icon: d.icon } : {}),
+    ...(d.language === "zh" ? { language: d.language } : {}),
     skills: qs.filter((q) => q.domain_id === d.id && q.active).map((q) => ({ key: q.key, text: q.text_template, levels: cleanLevels(q.levels) })),
     ...(d.love_key && d.love_text ? { love: { key: d.love_key, text: d.love_text } } : {}),
     ...(d.home_ideas ? { homeIdeas: d.home_ideas } : {}),
@@ -378,12 +380,16 @@ export async function setQuestionLevels(req: Request, user: SessionUser, key: st
   });
 }
 
-export async function moveQuestion(req: Request, user: SessionUser, key: string, direction: "up" | "down") {
+/** Moves a question one place up or down; with a level, past the next question asked at that level. */
+export async function moveQuestion(req: Request, user: SessionUser, key: string, direction: "up" | "down", level?: ClassLevel) {
   await tx(async (c) => {
     const q = await questionByKey(c, key);
     const list = await many<QuestionRow>(`SELECT ${Q_COLS} FROM questions WHERE domain_id = $1 AND active ORDER BY position, id`, [q.domain_id], c);
     const i = list.findIndex((x) => x.id === q.id);
-    const j = direction === "up" ? i - 1 : i + 1;
+    const asked = (x: QuestionRow) => !level || x.levels.includes(level);
+    let j = i;
+    do j += direction === "up" ? -1 : 1;
+    while (j >= 0 && j < list.length && !asked(list[j]));
     if (i < 0 || j < 0 || j >= list.length) return;
     [list[i], list[j]] = [list[j], list[i]];
     for (const [p, row] of list.entries()) await run("UPDATE questions SET position = $1 WHERE id = $2", [p, row.id], c);

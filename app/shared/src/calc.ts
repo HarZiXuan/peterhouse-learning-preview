@@ -21,21 +21,32 @@ const PRONOUN_FORMS: Record<string, Record<Pronoun, string>> = {
   "he/she/they": { she: "she", he: "he" },
   "him/her/them": { she: "her", he: "him" },
   "his/her/their": { she: "her", he: "his" },
+  // Chinese questions: 他 or 她.
+  "他/她": { she: "她", he: "他" },
 };
 
-/** Fills a question template: {name} becomes the child's preferred name and {he/she}, {him/her}, {his/her} the pronoun. */
+/** Fills a question template: {name} becomes the child's preferred name and {he/she}, {him/her}, {his/her} (or {他/她}) the pronoun. */
 export function fillTemplate(text: string, name: string, pronoun: Pronoun): string {
   let out = text.replace(/\{name\}/g, name);
   for (const [token, forms] of Object.entries(PRONOUN_FORMS)) out = out.split(`{${token}}`).join(forms[pronoun]);
   return out;
 }
 
-/** "{name} listens well and responds in a group." → "listens well and responds in a group" (for the writer and lists). */
+const HAN = /\p{Script=Han}/u;
+
+/** Is this text written in Chinese? */
+export const isChineseText = (text: string) => HAN.test(text);
+
+/**
+ * "{name} listens well and responds in a group." → "listens well and responds in a group";
+ * "{name}能听懂简单的华语指令。" → "能听懂简单的华语指令" (for the writer and lists).
+ */
 export function skillPhrase(skill: Skill, pronoun: Pronoun): string {
+  const chinese = isChineseText(skill.text);
   return fillTemplate(skill.text, "\u0001", pronoun)
     .replace(/^\s*\u0001\s*/, "")
-    .replace(/\u0001/g, "the child")
-    .replace(/[.!?\s]+$/, "");
+    .replace(/\u0001/g, chinese ? "孩子" : "the child")
+    .replace(/[.!?。！？\s]+$/u, "");
 }
 
 export function emptyAreaAnswer(area: Area): AreaAnswer {
@@ -181,6 +192,13 @@ export function termLabel(t: { season: string; year: number }) {
 
 export function countWords(text: string) {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
+
+/** Length of Chinese text: each character counts, and any English word in it counts once. */
+export function countChineseChars(text: string) {
+  const han = text.match(/\p{Script=Han}/gu)?.length ?? 0;
+  const latin = text.match(/[A-Za-z]+/g)?.length ?? 0;
+  return han + latin;
 }
 
 /** "June" is Semester 1 (January to June), "December" is Semester 2 (July to December). */

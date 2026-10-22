@@ -15,9 +15,11 @@ import type {
 } from "@peterhouse/shared";
 import {
   COVER_PHOTO_KEY,
+  childPhotoUrl,
   HOME_PICKS_MAX,
   LOVE_MAX,
   NOTE_MAX,
+  areaProgress,
   areaSummary,
   emptyAreaAnswer,
   fillTemplate,
@@ -38,7 +40,8 @@ import { getAi, getRecords, getRubric, getSchool } from "./school";
 import { buildAnonymousPayload, restoreName, scrubText, type Roster, type ReviewForWriting } from "./anonymise";
 import { openJson, openJsonOrNull, openText, sealJson, sealText } from "./records";
 import { writeWithSentenceBank } from "./writer/sentence-bank";
-import { getSystemPrompt, WriterError, complete, draftInstruction, paragraphInstruction, parseDraft, parseParagraph, withRetry } from "./writer/ai";
+import { getSystemPrompt, WriterError, complete, draftInstruction, paragraphInstruction, parseDraft, parseParagraph, partInstruction, withRetry } from "./writer/ai";
+import { canEditArea, isLead, partDone, workingOn, partRows, setPartDone, storePartParagraph, waitingParts } from "./parts";
 import { qualityFlags } from "./writer/quality";
 import type { WrittenDraft } from "./writer/types";
 
@@ -82,6 +85,8 @@ export type ReviewRow = {
   date_of_birth: string;
   pronoun: Pronoun;
   photo_consent: boolean;
+  /** When the child's profile photo last changed; null without one. */
+  photo_at: string | null;
   child_status: "active" | "left";
   class_name: string;
   class_level: ClassLevel;
@@ -94,7 +99,7 @@ const REVIEW_SELECT = `
   SELECT r.id, r.child_id, r.term_id, r.class_id, r.status, r.rubric, r.rubric_version_id, r.highlight, r.highlight_by, r.highlight_at, r.no_photo,
          r.staff_note, r.strengths, r.next_steps, r.draft, r.report_version, r.approved_by, r.approved_at, r.updated_at,
          r.submitted_by, r.submitted_at, r.change_note, r.change_note_by, r.change_note_at, r.taken_over_by, r.taken_over_at, r.admin_edited,
-         c.preferred_name, c.last_name, c.legal_name, c.chinese_name, c.date_of_birth, c.pronoun, c.photo_consent, c.status AS child_status,
+         c.preferred_name, c.last_name, c.legal_name, c.chinese_name, c.date_of_birth, c.pronoun, c.photo_consent, c.photo_at, c.status AS child_status,
          k.name AS class_name, k.level AS class_level,
          CASE t.semester WHEN 1 THEN 'June' ELSE 'December' END AS season, t.year, t.status AS term_status
   FROM reviews r
@@ -143,11 +148,6 @@ export async function classRole(user: SessionUser, classId: number, c?: Db): Pro
   return null;
 }
 
-/** A subject teacher rates and adds photos; the class's teachers write the report. */
-export async function isSubjectOnly(user: SessionUser, r: ReviewRow): Promise<boolean> {
-  return (await classRole(user, r.class_id)) === "subject";
-}
-
 /** Loads a review, but only for someone allowed to see its class. A review you may not see looks like one that does not exist. */
 export async function getReviewForUser(user: SessionUser, id: number, c?: Db): Promise<ReviewRow> {
   const r = await getReviewRow(id, c);
@@ -172,15 +172,26 @@ export function lockReason(user: SessionUser, r: ReviewRow): string | null {
 }
 
 /**
- * Loads a review for a change, refusing when it is locked. An administrator's change is marked for staff. A subject
- * teacher may only rate (`area`); the report itself is for the class's teachers.
+ * Loads a review for a change, refusing when it is locked. An administrator's change is marked for staff.
+ * With `area`, the change is to that area's part: its teacher, the lead or an administrator may make it, and once its
+ * teacher has sent it to the lead only the lead (or the teacher, after reopening it) changes it. Without `area` the
+ * change is to the report as a whole, which is the lead teacher's.
  */
 export async function getReviewForEdit(user: SessionUser, id: number, c?: Db, area?: string): Promise<ReviewRow> {
   const r = await getReviewForUser(user, id, c);
   const why = lockReason(user, r);
   if (why) throw new HttpError(409, why, "locked");
-  if ((await classRole(user, r.class_id, c)) === "subject") {
-    if (!area) throw new HttpError(403, "You rate this class's children. Its class teachers write the report.", "subject_only");
+  if (user.role !== "admin") {
+    const lead = await isLead(user, r.class_id, c);
+    if (area) {
+      if (!(await canEditArea(user, r, area, c))) {
+        const who = lead ? await workingOn(r, area, c) : null;
+        throw new HttpError(403, who ? `${who} is still working on this area. You can change it once they send it to you.` : "Another teacher rates this area for this class.", "not_your_part");
+      }
+      if (!lead && (await partDone(r.id, area, c))) throw new HttpError(409, "You sent this part to the lead teacher. Reopen it to change it.", "part_sent");
+    } else if (!lead) {
+      throw new HttpError(403, "The lead teacher writes the whole report and sends it. Rate your own areas and send your part.", "not_lead");
+    }
   }
   if (user.role === "admin" && !r.admin_edited) await run("UPDATE reviews SET admin_edited = true WHERE id = $1", [id], c);
   return r;
@@ -326,7 +337,10 @@ export async function saveArea(user: SessionUser, id: number, areaKey: string, a
 }
 
 export async function saveStaffNote(user: SessionUser, id: number, note: string): Promise<SaveResult> {
-  const r = await getReviewForEdit(user, id);
+  // A note for staff, not part of the report: any of the child's teachers may keep it.
+  const r = await getReviewForUser(user, id);
+  const why = lockReason(user, r);
+  if (why) throw new HttpError(409, why, "locked");
   await run("UPDATE reviews SET staff_note = $1, updated_at = now() WHERE id = $2", [sealText(note.slice(0, 2000), "reviews.staff_note"), id]);
   return { ok: true, savedAt: new Date().toISOString(), status: r.status };
 }
@@ -451,6 +465,11 @@ export async function writeDraft(user: SessionUser, id: number, opts: { provider
   if (r.status !== "ready" && r.status !== "written" && r.status !== "changes_requested") {
     return { ok: false, error: "This review is not ready yet. Finish the readiness check first." };
   }
+  // The lead writes the report once every other teacher has sent their part.
+  const waiting = await waitingParts(r, r.rubric.areas, user.role === "admin" ? null : user.id);
+  if (waiting.length && user.role !== "admin") {
+    return { ok: false, error: `Still waiting for ${waiting.map((w) => `${w.teacher} (${w.area})`).join(", ")} to send their part.` };
+  }
   const { input, rubric, answers } = await forWriting(r);
   const ai = getAi();
   const roster = await rosterFor(r);
@@ -462,7 +481,7 @@ export async function writeDraft(user: SessionUser, id: number, opts: { provider
   let sent = "";
   let fellBack: string | null = null;
   if (useAi) {
-    const user_ = `${draftInstruction(rubric.areas.map((a) => ({ key: a.key, name: a.name })))}\n\n${payload.text}`;
+    const user_ = `${draftInstruction(rubric.areas.map((a) => ({ key: a.key, name: a.name, language: a.language })))}\n\n${payload.text}`;
     sent = `SYSTEM\n${getSystemPrompt()}\n\nUSER\n${user_}`;
     try {
       written = await withRetry(async () => parseDraft(await complete(ai, getSystemPrompt(), user_), rubric.areas.map((a) => a.key)));
@@ -473,6 +492,10 @@ export async function writeDraft(user: SessionUser, id: number, opts: { provider
     }
   } else {
     written = writeWithSentenceBank(input, String(r.id));
+  }
+  // Each part a teacher checked and sent is used as it is; the writer's own version fills only the others.
+  for (const part of await partRows([r.id])) {
+    if (part.done_at && part.paragraph.trim()) written.areas[part.area_key] = part.paragraph;
   }
   // The writer suggests the ideas to try at home, aimed at what the child finds hardest; the sentence bank tops them up.
   if (written.homeIdeas.length < 2) {
@@ -511,7 +534,8 @@ export async function writeDraft(user: SessionUser, id: number, opts: { provider
 }
 
 /** Rewrites one paragraph without touching the teacher's edits elsewhere. */
-export async function rewriteParagraph(user: SessionUser, id: number, key: string, tone?: string): Promise<WriteOutcome> {
+/** `request` is what the teacher asked for ("mention his drawing", "make it shorter"); names in it are removed before sending. */
+export async function rewriteParagraph(user: SessionUser, id: number, key: string, tone?: string, request?: string): Promise<WriteOutcome> {
   const r = await getReviewForEdit(user, id);
   if (!r.draft) return { ok: false, error: "Write the draft first." };
   const draft = r.draft;
@@ -531,7 +555,8 @@ export async function rewriteParagraph(user: SessionUser, id: number, key: strin
     const payload = buildAnonymousPayload(input, roster);
     // The teacher's current text contains the name; send it scrubbed like everything else.
     const current = scrubText(para.text, roster).text;
-    const user_ = `${paragraphInstruction(para.title, current, tone)}\n\n${payload.text}`;
+    const asked = request?.trim() ? scrubText(request.trim(), roster).text : undefined;
+    const user_ = `${paragraphInstruction(para.title, current, tone, rubric.areas.find((a) => a.key === areaKey)?.language, asked)}\n\n${payload.text}`;
     try {
       raw = await withRetry(async () => parseParagraph(await complete(ai, getSystemPrompt(), user_)));
       provider = ai.provider;
@@ -636,13 +661,15 @@ export async function buildReportData(r: ReviewRow): Promise<ReportData> {
   return {
     reviewId: r.id,
     childName: r.legal_name,
+    firstName: r.preferred_name,
     chineseName: r.chinese_name,
     childInitial: [...r.preferred_name][0]?.toUpperCase() ?? "",
     className: r.class_name,
     dateOfBirth: r.date_of_birth,
     season: r.season,
     year: r.year,
-    coverPhotoId: cover?.id ?? null,
+    // An approved report keeps the cover it was approved with; every other report shows the child's profile photo.
+    coverPhoto: r.status === "approved" && cover ? `/api/photos/${cover.id}` : childPhotoUrl(r.child_id, r.photo_at),
     photoIds: ordered.map((p) => p.id),
     areas: rubric.areas.map((a) => {
       const ans = answers[a.key];
@@ -651,6 +678,7 @@ export async function buildReportData(r: ReviewRow): Promise<ReportData> {
         name: a.name,
         subName: a.subName ?? null,
         icon: a.icon ?? null,
+        language: a.language ?? "en",
         summary: areaSummary(a, ans),
         skills: a.skills.map((s) => ({
           key: s.key,
@@ -676,4 +704,61 @@ export async function buildReportData(r: ReviewRow): Promise<ReportData> {
     version: r.report_version,
     previousSeason: prev?.season ?? null,
   };
+}
+
+// ─── A teacher's part ────────────────────────────────────────────────────
+
+/** Has the AI (or the sentence bank) write one area's paragraph for its teacher to check, optionally with their request. */
+export async function writePart(user: SessionUser, id: number, areaKey: string, request?: string): Promise<WriteOutcome & { text?: string }> {
+  const r = await getReviewForEdit(user, id, undefined, areaKey);
+  const area = r.rubric.areas.find((a) => a.key === areaKey);
+  if (!area) return { ok: false, error: "Unknown area." };
+  const { input, answers } = await forWriting(r);
+  if (areaProgress(area, answers[areaKey]).todo > 0) return { ok: false, error: `Rate every statement in ${area.name}, or mark it Not seen yet, first.` };
+  const ai = getAi();
+  let raw = writeWithSentenceBank(input, `${r.id}:${areaKey}:${Date.now()}`).areas[areaKey] ?? "";
+  let provider = "sentence_bank";
+  let fellBack: string | null = null;
+  if (ai.provider !== "sentence_bank") {
+    const roster = await rosterFor(r);
+    const payload = buildAnonymousPayload(input, roster);
+    const asked = request?.trim() ? scrubText(request.trim(), roster).text : undefined;
+    const current = (await partRows([r.id])).find((p) => p.area_key === areaKey)?.paragraph;
+    const user_ = `${partInstruction(area.name, area.language, current ? scrubText(current, roster).text : undefined, asked)}\n\n${payload.text}`;
+    try {
+      raw = await withRetry(async () => parseParagraph(await complete(ai, getSystemPrompt(), user_)));
+      provider = ai.provider;
+    } catch (e) {
+      fellBack = e instanceof WriterError ? e.message : "The writing service failed.";
+    }
+  }
+  const text = restoreName(raw, r.preferred_name).replace(/\s{2,}/g, " ").trim();
+  await storePartParagraph(r.id, areaKey, text);
+  return { ok: true, provider, fellBack, text };
+}
+
+/** The teacher's own wording of their part. */
+export async function savePartText(user: SessionUser, id: number, areaKey: string, text: string) {
+  const r = await getReviewForEdit(user, id, undefined, areaKey);
+  await storePartParagraph(r.id, areaKey, text.trim());
+}
+
+/** The teacher sends their checked part to the lead teacher. */
+export async function sendPart(user: SessionUser, id: number, areaKey: string) {
+  const r = await getReviewForEdit(user, id, undefined, areaKey);
+  const area = r.rubric.areas.find((a) => a.key === areaKey);
+  if (!area) throw new HttpError(400, "Unknown area.");
+  const { answers } = await loadAnswers(r.id, r.rubric);
+  if (areaProgress(area, answers[areaKey]).todo > 0) throw new HttpError(409, `Rate every statement in ${area.name}, or mark it Not seen yet, first.`);
+  if (!(await partRows([r.id])).find((p) => p.area_key === areaKey)?.paragraph.trim()) throw new HttpError(409, `Write and check the ${area.name} paragraph first.`);
+  await setPartDone(r.id, areaKey, user.id);
+}
+
+/** Takes a part back from the lead to change it (its teacher or the lead). */
+export async function reopenPart(user: SessionUser, id: number, areaKey: string) {
+  const r = await getReviewForUser(user, id);
+  const why = lockReason(user, r);
+  if (why) throw new HttpError(409, why, "locked");
+  if (!(await canEditArea(user, r, areaKey))) throw new HttpError(403, "Another teacher rates this area for this class.");
+  await setPartDone(r.id, areaKey, null);
 }

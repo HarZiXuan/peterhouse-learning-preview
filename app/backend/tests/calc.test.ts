@@ -14,7 +14,7 @@ import {
 } from "@peterhouse/shared";
 import { DEFAULT_RUBRIC, birthdayRange, levelForBirthday, rubricForLevel } from "@peterhouse/shared";
 import { qualityFlags } from "../src/domain/writer/quality";
-import { sentencesFor, withAdverb, writeWithSentenceBank } from "../src/domain/writer/sentence-bank";
+import { chineseSentencesFor, sentencesFor, withAdverb, writeWithSentenceBank } from "../src/domain/writer/sentence-bank";
 import type { AreaAnswer, Level } from "@peterhouse/shared";
 
 // A K1 child's questions. Most tests below are about one child's form.
@@ -34,7 +34,7 @@ describe("the question set", () => {
     expect(K1.areas.map((a) => a.name)).toEqual(["English", "Chinese", "Mathematics", "Social-Emotional Development", "Self-Enrichment"]);
     expect(K1.areas.map((a) => a.skills.length)).toEqual([5, 4, 5, 4, 4]);
     expect(K1.areas[4]).toMatchObject({ love: { key: "enr_love" } });
-    expect(K1.areas.every((a) => a.skills.every((s) => s.text.startsWith("{name} ")))).toBe(true);
+    expect(K1.areas.every((a) => a.skills.every((s) => s.text.startsWith("{name}")))).toBe(true);
   });
   it("asks each age group its own questions", () => {
     const pg = rubricForLevel(DEFAULT_RUBRIC, "PG");
@@ -192,6 +192,19 @@ describe("sentence bank", () => {
     expect(w.opening).toContain("loved the music corner");
     expect(w.homeIdeas).toHaveLength(2);
     for (const t of [w.opening, w.closing, ...Object.entries(w.areas).filter(([k]) => k !== "mat").map(([, v]) => v)]) expect(t).not.toMatch(/\d/);
+  });
+  it("writes the Chinese area in Chinese, honestly, ending with the teachers' plan", () => {
+    const chi = K1.areas[1];
+    expect(chi.language).toBe("zh");
+    expect(chineseSentencesFor(chi.skills[1], 1, "he")[0]).toBe("[Child]目前还不能按正确的笔顺书写简单的汉字，仍需要老师在旁协助。");
+    const answers = allAt(4);
+    answers.chi.skills.chi_k1_2 = { level: 1, touched: true };
+    const w = writeWithSentenceBank({ pronoun: "he", season: "December", level: "K1", rubric: K1, answers, strengths: [], nextSteps: [] }, "seed");
+    expect(w.areas.chi).toMatch(/^\[Child\]/);
+    expect(w.areas.chi).toMatch(/(还不能|还比较难).*按正确的笔顺书写简单的汉字|按正确的笔顺书写简单的汉字.*(还不能|还比较难)/);
+    expect(w.areas.chi).toMatch(/我们.*。$/);
+    expect(w.areas.chi.replace(/\[Child\]/g, "")).not.toMatch(/[A-Za-z]/);
+    expect(qualityFlags(w.areas.chi, "area", { neverUse: [] }).join(" ")).toMatch(/characters/);
   });
 });
 

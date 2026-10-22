@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "migrate": "tsx --env-file-if-exists=.env src/cli/migrate.ts",
     "create-admin": "tsx --env-file-if-exists=.env src/cli/create-admin.ts",
+    "seed-dummy": "tsx --env-file-if-exists=.env src/cli/seed-dummy.ts",
     "import-sqlite": "tsx --env-file-if-exists=.env src/cli/import-sqlite.ts",
     "gen-key": "node -e \"console.log('k1:'+require('crypto').randomBytes(32).toString('base64'))\"",
     "test": "vitest run",

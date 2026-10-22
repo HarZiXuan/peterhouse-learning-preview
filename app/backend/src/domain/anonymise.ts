@@ -9,7 +9,7 @@
 // birthday, photo, class, teacher or school, so it cannot leak them.
 // tests/anonymise.test.ts checks this.
 
-import { classLevel, isYoungLevel, scoreOf, semesterLabel, skillPhrase, type AreaAnswer, type ClassLevel, type Pronoun, type Rubric } from "@peterhouse/shared";
+import { classLevel, countChineseChars, countWords, isYoungLevel, scoreOf, semesterLabel, skillPhrase, type AreaAnswer, type ClassLevel, type Pronoun, type Rubric } from "@peterhouse/shared";
 
 export type Roster = {
   /** Every name the current child goes by (preferred and legal name parts). */
@@ -145,7 +145,7 @@ export function buildAnonymousPayload(review: ReviewForWriting, roster: Roster):
   for (const area of review.rubric.areas) {
     const ans = review.answers[area.key];
     lines.push("");
-    lines.push(`domain: ${area.name}`);
+    lines.push(`domain: ${area.name}${area.language === "zh" ? " (questions and paragraph in Chinese)" : ""}`);
     for (const s of area.skills) {
       total++;
       const score = scoreOf(ans, s.key);
@@ -165,6 +165,10 @@ export function buildAnonymousPayload(review: ReviewForWriting, roster: Roster):
 
 /** Put the name back on the school computer, after writing. */
 export function restoreName(text: string, preferredName: string): string {
+  // A paragraph written in Chinese gets Chinese words for the placeholders.
+  if (countChineseChars(text) > 2 * countWords(text)) {
+    return text.replace(/\[Child\]/g, preferredName).replace(/\[Friend\]/g, "同伴").replace(/\[Teacher\]/g, "老师").replace(/\[removed\]/g, "");
+  }
   return text
     .replace(/\[Child\]/g, preferredName)
     .replace(/\[Friend\]s/g, "friends")

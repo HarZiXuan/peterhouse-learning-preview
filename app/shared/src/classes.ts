@@ -2,11 +2,11 @@
 // not their exact age today: a child turning 4 in January and one turning 4 in December are both N2.
 
 export const CLASS_LEVELS = [
-  { key: "PG", name: "Playgroup", turns: 2, ratio: 6 },
-  { key: "N1", name: "Nursery 1", turns: 3, ratio: 8 },
-  { key: "N2", name: "Nursery 2", turns: 4, ratio: 10 },
-  { key: "K1", name: "Kindergarten 1", turns: 5, ratio: 12 },
-  { key: "K2", name: "Kindergarten 2", turns: 6, ratio: 15 },
+  { key: "PG", name: "Playgroup", turns: 2 },
+  { key: "N1", name: "Nursery 1", turns: 3 },
+  { key: "N2", name: "Nursery 2", turns: 4 },
+  { key: "K1", name: "Kindergarten 1", turns: 5 },
+  { key: "K2", name: "Kindergarten 2", turns: 6 },
 ] as const;
 
 export type ClassLevel = (typeof CLASS_LEVELS)[number]["key"];
@@ -45,8 +45,6 @@ export function nextLevel(level: ClassLevel): ClassLevel | null {
   return CLASS_LEVEL_KEYS[i + 1] ?? null;
 }
 
-/** Most children a class may have for its teachers. With no teacher yet, the ratio for one. */
-export const classCapacity = (level: ClassLevel, teachers: number) => classLevel(level).ratio * Math.max(1, teachers);
 
 export const LEVEL_PROBLEM_TEXT: Record<LevelProblem, string> = {
   no_birthday: "No birthday yet, so no level",

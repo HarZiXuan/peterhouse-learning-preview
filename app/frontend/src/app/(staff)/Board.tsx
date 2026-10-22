@@ -5,7 +5,15 @@ import { apiGet } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SUBJECT_SWATCH } from "@/lib/calendar";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/components/icons";
+
+const ROLE: Record<"lead" | "co" | "subject", { label: string; className: string }> = {
+  lead: { label: "Lead teacher", className: "bg-[#dbeef9] text-[#0a3a57]" },
+  co: { label: "Co-teacher", className: "bg-[#e9e3f5] text-[#3b2a63]" },
+  subject: { label: "Subject teacher", className: "bg-[#fde3d7] text-[#6b2a10]" },
+};
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -29,7 +37,7 @@ export async function Board() {
               Ongoing · {period.season === "June" ? "January – June" : "July – December"}
             </Badge>
           </p>
-          <h1 className="font-heading text-4xl font-bold leading-tight tracking-tight md:text-[44px]">My classes</h1>
+          <h1 className="flex items-center gap-3 font-heading text-4xl font-bold leading-tight tracking-tight md:text-[44px]"><Icon name="class" size={30} />My classes</h1>
           <p className="text-[17px] text-foreground/80">
             {classes.length === 0 ? (
               "You are not in a class yet."
@@ -67,6 +75,29 @@ export async function Board() {
                   <span className="font-heading text-2xl font-semibold leading-tight">{k.name}</span>
                   <Badge className={cn("shrink-0 border-transparent px-3 text-[12.5px] font-extrabold", n === 0 ? "bg-secondary text-muted-foreground" : left === 0 ? "bg-[#dcefe2] text-[#1f5236]" : "bg-[#fff1c2] text-[#4d3700]")}>{n === 0 ? "No children yet" : left === 0 ? "All done" : `${left} to do`}</Badge>
                 </span>
+                {k.myRole && (
+                  <span className="grid gap-1.5">
+                    <span className="flex flex-wrap items-center gap-1.5 text-[13.5px] text-muted-foreground">
+                      <Badge className={cn("border-transparent px-2.5 font-bold", ROLE[k.myRole].className)}>{ROLE[k.myRole].label}</Badge>
+                      {k.mySubjects.length === 0 ? (
+                        <span>
+                          Teaches <b className="font-bold text-foreground">all subjects</b>
+                        </span>
+                      ) : (
+                        <>
+                          <span>Teaches</span>
+                          {k.mySubjects.map((x) => (
+                            <span key={x.name} className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[13px] font-bold text-foreground">
+                              <span className="size-2 rounded-full" style={{ background: SUBJECT_SWATCH[x.color] }} aria-hidden />
+                              {x.name}
+                            </span>
+                          ))}
+                        </>
+                      )}
+                    </span>
+                    {k.myRole === "subject" && <span className="text-[13px] text-muted-foreground">You rate the children in your subjects. The class teachers write the reports.</span>}
+                  </span>
+                )}
                 <span className="flex items-baseline gap-2">
                   <span className="font-heading text-[44px] font-bold leading-none">{n}</span>
                   <span className="text-base font-bold text-foreground/80">{n === 1 ? "child" : "children"}</span>

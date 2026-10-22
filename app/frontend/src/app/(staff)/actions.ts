@@ -3,7 +3,7 @@
 // Thin server actions: each one asks the backend to do the work as the signed-in person.
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { AreaAnswer, ReviewPhoto, ReviewView, SaveResult, WriteOutcome } from "@peterhouse/shared";
+import type { AreaAnswer, ClassLevel, ReviewPhoto, ReviewView, SaveResult, WriteOutcome } from "@peterhouse/shared";
 import { apiSend } from "@/lib/api";
 
 const failed = (e: string) => ({ ok: false as const, error: e });
@@ -17,6 +17,29 @@ export async function removeChildAction(reviewId: number) {
 export async function saveAreaAction(reviewId: number, areaKey: string, answer: AreaAnswer): Promise<SaveResult> {
   const res = await apiSend<SaveResult>("PUT", `/reviews/${reviewId}/areas/${encodeURIComponent(areaKey)}`, answer);
   return res.ok ? res.data : failed(res.error);
+}
+
+// A teacher's part of the report: their areas' paragraph, and sending it to the lead teacher.
+export async function writePartAction(reviewId: number, areaKey: string, request?: string): Promise<(WriteOutcome & { text?: string }) | { ok: false; error: string }> {
+  const res = await apiSend<WriteOutcome & { text?: string }>("POST", `/reviews/${reviewId}/parts/${encodeURIComponent(areaKey)}/write`, request?.trim() ? { request: request.trim() } : {});
+  return res.ok ? res.data : failed(res.error);
+}
+
+export async function savePartAction(reviewId: number, areaKey: string, text: string) {
+  const res = await apiSend("PUT", `/reviews/${reviewId}/parts/${encodeURIComponent(areaKey)}`, { text });
+  return res.ok ? { ok: true as const } : failed(res.error);
+}
+
+export async function sendPartAction(reviewId: number, areaKey: string) {
+  const res = await apiSend("POST", `/reviews/${reviewId}/parts/${encodeURIComponent(areaKey)}/send`, {});
+  if (res.ok) revalidatePath(`/child/${reviewId}`);
+  return res.ok ? { ok: true as const } : failed(res.error);
+}
+
+export async function reopenPartAction(reviewId: number, areaKey: string) {
+  const res = await apiSend("POST", `/reviews/${reviewId}/parts/${encodeURIComponent(areaKey)}/reopen`, {});
+  if (res.ok) revalidatePath(`/child/${reviewId}`);
+  return res.ok ? { ok: true as const } : failed(res.error);
 }
 
 export async function saveChineseNameAction(reviewId: number, chineseName: string) {
@@ -38,8 +61,8 @@ export async function editTextAction(reviewId: number, key: string, text: string
   return res.ok ? { ok: true as const } : failed(res.error);
 }
 
-export async function rewriteSectionAction(reviewId: number, key: string, tone?: string): Promise<WriteOutcome> {
-  const res = await apiSend<WriteOutcome>("POST", `/reviews/${reviewId}/paragraphs/${encodeURIComponent(key)}/rewrite`, tone ? { tone } : {});
+export async function rewriteSectionAction(reviewId: number, key: string, tone?: string, request?: string): Promise<WriteOutcome> {
+  const res = await apiSend<WriteOutcome>("POST", `/reviews/${reviewId}/paragraphs/${encodeURIComponent(key)}/rewrite`, { ...(tone ? { tone } : {}), ...(request?.trim() ? { request: request.trim() } : {}) });
   if (res.ok) revalidatePath(`/child/${reviewId}/report`);
   return res.ok ? res.data : failed(res.error);
 }
@@ -80,11 +103,10 @@ async function admin(method: "POST" | "PUT", path: string, body?: unknown): Prom
 }
 
 export const addQuestionAction = async (areaKey: string, text: string, levels?: string[]) => admin("POST", "/questions", { areaKey, text, levels });
-export const setQuestionLevelsAction = async (key: string, levels: string[]) => admin("PUT", `/questions/${encodeURIComponent(key)}/levels`, { levels });
 export const rewordQuestionAction = async (key: string, text: string, sameSkill: boolean) => admin("PUT", `/questions/${encodeURIComponent(key)}`, { text, sameSkill });
 export const retireQuestionAction = async (key: string) => admin("POST", `/questions/${encodeURIComponent(key)}/retire`);
 export const restoreQuestionAction = async (key: string) => admin("POST", `/questions/${encodeURIComponent(key)}/restore`);
-export const moveQuestionAction = async (key: string, direction: "up" | "down") => admin("POST", `/questions/${encodeURIComponent(key)}/move`, { direction });
+export const moveQuestionAction = async (key: string, direction: "up" | "down", level?: ClassLevel) => admin("POST", `/questions/${encodeURIComponent(key)}/move`, { direction, level });
 export const updateDomainAction = async (areaKey: string, patch: { loveText?: string; homeIdeas?: string[] }) => admin("PUT", `/domains/${encodeURIComponent(areaKey)}`, patch);
 export const discardQuestionsAction = async () => admin("POST", "/questions/discard");
 

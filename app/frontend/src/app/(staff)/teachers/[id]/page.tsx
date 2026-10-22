@@ -31,7 +31,7 @@ export default async function TeacherPage({ params }: { params: Promise<{ id: st
     { label: "Approved", n: done },
     { label: "Waiting for review", n: reports.filter((r) => r.status === "submitted").length },
     { label: "Changes requested", n: reports.filter((r) => r.status === "changes_requested").length },
-    { label: "Not sent yet", n: reports.filter((r) => !STATUS_ORDER.includes(r.status)).length },
+    { label: "With teachers", n: reports.filter((r) => !STATUS_ORDER.includes(r.status)).length },
   ];
 
   return (

@@ -95,6 +95,23 @@ function timetablesFor(classIds: number[], lessons: Lesson[]): Timetable[] {
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * A teacher's calendar shows only their own lessons: those that name them, and those that name nobody yet in a class
+ * they teach, for a subject they teach there (a lead or co-teacher with no subjects tagged teaches every subject).
+ * The administrator sees every lesson.
+ */
+async function mineOnly(user: SessionUser): Promise<(lessons: Lesson[]) => Lesson[]> {
+  if (user.role === "admin") return (lessons) => lessons;
+  const staff = new Set((await many<{ class_id: number }>("SELECT class_id FROM class_staff WHERE user_id = $1", [user.id])).map((r) => Number(r.class_id)));
+  const tags = await many<{ class_id: number; subject_id: number }>("SELECT class_id, subject_id FROM class_subject_teachers WHERE user_id = $1", [user.id]);
+  const tagged = (classId: number) => tags.filter((t) => Number(t.class_id) === classId).map((t) => Number(t.subject_id));
+  const teaches = (l: Lesson) => {
+    const mine = tagged(l.classId);
+    return mine.length ? mine.includes(l.subjectId) : staff.has(l.classId);
+  };
+  return (lessons) => lessons.filter((l) => l.teacherId === user.id || (l.teacherId === null && teaches(l)));
+}
+
 export async function calendarView(user: SessionUser, from: string, to: string): Promise<CalendarView> {
   if (!ISO.test(from) || !ISO.test(to) || from > to) throw new HttpError(400, "Choose a valid date range.");
   if (new Date(to).getTime() - new Date(from).getTime() > 400 * 86_400_000) throw new HttpError(400, "Choose a shorter date range.");
@@ -108,8 +125,10 @@ export async function calendarView(user: SessionUser, from: string, to: string):
     return d.toISOString().slice(0, 10);
   };
   const changed = await changedWeeksOf(ids, monday(from), to);
-  const lessons = [...normal, ...changed.lessons];
-  return { events: await eventsFor(user, from, to, classes), timetables: timetablesFor(ids, normal), lessons, changedWeeks: changed.weeks, subjects: await listSubjects(), classes, today: todayInSingapore() };
+  const lessons = (await mineOnly(user))([...normal, ...changed.lessons]);
+  const teacherIds = [...new Set(lessons.map((l) => l.teacherId).filter((x): x is number => x !== null))];
+  const teachers = (await many<{ id: number; name: string }>("SELECT id, name FROM users WHERE id = ANY($1::bigint[]) ORDER BY name", [teacherIds])).map((u) => ({ id: Number(u.id), name: u.name }));
+  return { events: await eventsFor(user, from, to, classes), timetables: timetablesFor(ids, normal), lessons, changedWeeks: changed.weeks, subjects: await listSubjects(), teachers, classes, today: todayInSingapore() };
 }
 
 // ─── The administrator's changes ─────────────────────────────────────────

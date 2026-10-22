@@ -68,7 +68,7 @@ function Period({ p, on, teacher }: { p: PeriodSummary; on: boolean; teacher: bo
             </span>
             {p.counts.waiting > 0 && <span>{p.counts.waiting} to review</span>}
             {p.counts.changes > 0 && <span>{p.counts.changes} sent back</span>}
-            {p.counts.not_submitted > 0 && <span>{p.counts.not_submitted} not sent</span>}
+            {p.counts.not_submitted > 0 && <span>{p.counts.not_submitted} with teachers</span>}
             {open === 0 && p.total > 0 && <span>All done</span>}
           </>
         )}

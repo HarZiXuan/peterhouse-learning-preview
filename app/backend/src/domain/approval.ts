@@ -7,6 +7,7 @@ import { fillTemplate, levelWord, scoreOf } from "@peterhouse/shared";
 import { many, one, run, tx } from "../db";
 import { HttpError } from "../http";
 import { openJson, openText, sealJson, sealText } from "./records";
+import { isLead } from "./parts";
 import { classRole, getReviewForUser, getReviewRow, loadAnswers, lockReason, type ReviewRow } from "./reviews";
 import { seasonOfSemester, workspace } from "./workspace";
 
@@ -21,8 +22,8 @@ const versionCount = async (reviewId: number) => (await one<{ n: number }>("SELE
 /** Where the report is, and what this person can do with it. */
 export async function workflowFor(user: SessionUser, r: ReviewRow): Promise<Workflow> {
   const who = await names([r.change_note_by, r.submitted_by, r.approved_by, r.taken_over_by]);
-  // Only the class's own teachers send the report; a subject teacher rates their subject and nothing more.
-  const teacherCan = (await classRole(user, r.class_id)) === "class" && !r.taken_over_by && r.term_status === "open";
+  // Only the lead teacher sends the report; the other teachers send their parts to the lead.
+  const teacherCan = (await isLead(user, r.class_id)) && !r.taken_over_by && r.term_status === "open";
   return {
     status: r.status,
     locked: lockReason(user, r),
@@ -49,7 +50,7 @@ async function openReview(user: SessionUser, id: number, adminOnly = false) {
 export async function submitForReview(user: SessionUser, id: number) {
   const r = await openReview(user, id);
   if (user.role === "admin") throw new HttpError(403, "Teachers submit their reports. An administrator approves them.");
-  if ((await classRole(user, r.class_id)) !== "class") throw new HttpError(403, "The class’s own teachers send the report for review.");
+  if (!(await isLead(user, r.class_id))) throw new HttpError(403, "The lead teacher sends the report for review.");
   if (r.taken_over_by) throw new HttpError(409, "An administrator has taken this report over.");
   if (!r.draft || (r.status !== "written" && r.status !== "changes_requested")) throw new HttpError(409, "Write the report before sending it for review.");
   const stale = r.draft.paragraphs.filter((p) => p.stale).map((p) => p.title);
@@ -65,7 +66,7 @@ export async function submitForReview(user: SessionUser, id: number) {
 /** The teacher takes a submitted report back to change something before it is reviewed. */
 export async function takeBack(user: SessionUser, id: number) {
   const r = await openReview(user, id);
-  if ((await classRole(user, r.class_id)) !== "class") throw new HttpError(403, "The class’s own teachers send the report for review.");
+  if (!(await isLead(user, r.class_id))) throw new HttpError(403, "The lead teacher sends the report for review.");
   if (r.status !== "submitted") throw new HttpError(409, "Only a report waiting for review can be taken back.");
   if (r.taken_over_by) throw new HttpError(409, "An administrator has taken this report over.");
   await tx(async (c) => {

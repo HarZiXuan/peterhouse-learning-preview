@@ -1,10 +1,11 @@
 // Subject timetable (CHANGES-TO-MAKE change 7): the school's subject list and each class's fixed weekly lessons.
 // The administrator manages everything. A lesson can name only one of its class's teachers (change 12): its lead and
 // co-teachers, or a subject teacher of that subject. A subject teacher manages their own lessons of their subjects.
-import type { Lesson, LessonInput, SessionUser, StaffRef, Subject, SubjectColor, SubjectsView, TimetableView } from "@peterhouse/shared";
+import type { ClassLevel, Lesson, LessonInput, SessionUser, StaffRef, Subject, SubjectColor, SubjectsView, TimetableView } from "@peterhouse/shared";
 import { SUBJECT_COLORS } from "@peterhouse/shared";
 import { many, one, run, tx, type Db } from "../db";
 import { HttpError, notFound } from "../http";
+import { LEVEL_ORDER } from "./classes";
 import { MAY_TEACH, TAUGHT_BY } from "./staff";
 import { workspace } from "./workspace";
 
@@ -78,7 +79,9 @@ function cleanSubject(input: { name: string; color: string }) {
 }
 
 const uniqueSubject = (e: unknown): never => {
-  if ((e as { code?: string }).code === "23505") throw new HttpError(409, "There is already a subject with that name.");
+  const err = e as { code?: string; constraint?: string };
+  if (err.code === "23505" && err.constraint === "subjects_color_key") throw new HttpError(409, "Another subject already has that colour. Choose a different one.");
+  if (err.code === "23505") throw new HttpError(409, "There is already a subject with that name.");
   throw e;
 };
 
@@ -104,10 +107,13 @@ export async function updateSubject(id: number, input: { name: string; color: st
   }
 }
 
-/** A subject still on a timetable is hidden instead, so past timetables keep their wording. */
+/** Deletes a subject and every lesson of it, on the usual timetables and on changed weeks. */
 export async function deleteSubject(id: number) {
-  if ((await one("SELECT 1 FROM lessons WHERE subject_id = $1", [id])) || (await one("SELECT 1 FROM week_lessons WHERE subject_id = $1", [id]))) throw new HttpError(409, "This subject is on a timetable. Hide it instead, or remove its lessons first.");
-  if (!(await run("DELETE FROM subjects WHERE id = $1", [id]))) throw notFound("That subject");
+  await tx(async (c) => {
+    await run("DELETE FROM week_lessons WHERE subject_id = $1", [id], c);
+    await run("DELETE FROM lessons WHERE subject_id = $1", [id], c);
+    if (!(await run("DELETE FROM subjects WHERE id = $1", [id], c))) throw notFound("That subject");
+  });
 }
 
 // ─── A class's lessons ───────────────────────────────────────────────────
@@ -134,19 +140,18 @@ async function editableFor(user: SessionUser, classId: number, c?: Db): Promise<
   return rows.length ? { subjectIds: rows.map((r) => Number(r.subject_id)) } : null;
 }
 
-/** The classes this person can open a timetable for: theirs as class teacher or subject teacher; all for an administrator. */
 /** The classes whose timetable this person sees: a teacher's own classes first, then those they teach a subject in. */
 async function timetableClasses(user: SessionUser) {
   const { termId } = await workspace();
-  return many<{ id: number; name: string }>(
-    `SELECT k.id, k.name FROM classes k WHERE k.term_id = $1
+  return many<{ id: number; name: string; level: ClassLevel }>(
+    `SELECT k.id, k.name, k.level FROM classes k WHERE k.term_id = $1
        AND ($2 OR k.id IN ${TAUGHT_BY(3)})
-     ORDER BY NOT EXISTS (SELECT 1 FROM class_staff s WHERE s.class_id = k.id AND s.user_id = $3), k.name`,
+     ORDER BY NOT EXISTS (SELECT 1 FROM class_staff s WHERE s.class_id = k.id AND s.user_id = $3), ${LEVEL_ORDER}, k.name`,
     [termId, user.role === "admin", user.id],
   );
 }
 
-export async function timetableView(user: SessionUser, classId?: number, weekOf?: string): Promise<TimetableView | { classes: { id: number; name: string }[]; classId: null }> {
+export async function timetableView(user: SessionUser, classId?: number, weekOf?: string): Promise<TimetableView | { classes: TimetableView["classes"]; classId: null }> {
   const classes = await timetableClasses(user);
   const id = classId && classes.some((k) => k.id === classId) ? classId : classes[0]?.id;
   if (!id) return { classes, classId: null };

@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import type { Lesson, LessonInput, Subject, TimetableView } from "@peterhouse/shared";
+import { CLASS_LEVELS } from "@peterhouse/shared";
 import { adminSend } from "@/lib/admin-client";
 import { SUBJECT_TINT, WEEKDAY_NAMES, addDays, mondayOf, minutes, shortDate, time, weekday as weekdayOf } from "@/lib/calendar";
 import { Icon } from "@/components/icons";
@@ -627,16 +628,26 @@ export function TimetableGrid({ tt: served0, today, meId }: { tt: TimetableView;
   }
 
   // ── dragging a subject from the list onto the week ─────────────────────────────────────────────────────────────
+  // The drag lives in a ref as well as in state: a pointer move that arrives after the drop (with an older render's
+  // state) must not bring the drag back, or the subject is left floating on the page.
+  const paletteRef = useRef<PaletteDrag | null>(null);
+  const setPaletteDrag = (d: PaletteDrag | null) => {
+    paletteRef.current = d;
+    setPalette(d);
+  };
   function paletteMove(e: React.PointerEvent<HTMLButtonElement>) {
-    if (!palette) return;
-    if (Math.hypot(e.clientX - palette.x0, e.clientY - palette.y0) > 4) dragged.current = true;
+    const cur = paletteRef.current;
+    if (!cur) return;
+    if (Math.hypot(e.clientX - cur.x0, e.clientY - cur.y0) > 4) dragged.current = true;
     const p = pointAt(e);
-    setPalette({ ...palette, x: e.clientX, y: e.clientY, target: p.inside && dragged.current ? { weekday: p.weekday, start: hourAt(p.min) } : null });
+    setPaletteDrag({ ...cur, x: e.clientX, y: e.clientY, target: p.inside && dragged.current ? { weekday: p.weekday, start: hourAt(p.min) } : null });
   }
+  /** The drop: on release, or when the browser stops sending this pointer to us (the drag must still end). */
   function paletteUp() {
-    const p = palette;
-    setPalette(null);
-    if (p?.target && dragged.current) void add(newLesson(p.target.weekday, p.target.start, p.target.start + 60, p.subject.id), p.subject.name);
+    const p = paletteRef.current;
+    if (!p) return;
+    setPaletteDrag(null);
+    if (p.target && dragged.current) void add(newLesson(p.target.weekday, p.target.start, p.target.start + 60, p.subject.id), p.subject.name);
   }
 
   const selected = lessons.find((l) => l.id === selectedId) ?? null;
@@ -719,22 +730,52 @@ export function TimetableGrid({ tt: served0, today, meId }: { tt: TimetableView;
     return rows;
   })();
 
+  const level = tt.classes.find((k) => k.id === tt.classId)?.level;
+  const levels = CLASS_LEVELS.filter((l) => tt.classes.some((k) => k.level === l.key));
+
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
         {tt.classes.length > 1 && (
-          <div className="grid gap-1.5">
-            <label htmlFor="tt-class" className="text-sm font-semibold text-muted-foreground">
-              Class
-            </label>
-            <select id="tt-class" className={cn(SELECT, "w-auto min-w-52")} value={tt.classId} onChange={(e) => router.push(href({ classId: Number(e.target.value) }))}>
-              {tt.classes.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <>
+            {/* Level first, then the classes of that level, so the class list stays short. */}
+            {levels.length > 1 && (
+              <div className="grid gap-1.5">
+                <label htmlFor="tt-level" className="text-sm font-semibold text-muted-foreground">
+                  Level
+                </label>
+                <select
+                  id="tt-level"
+                  className={cn(SELECT, "w-auto min-w-44")}
+                  value={level}
+                  onChange={(e) => {
+                    const first = tt.classes.find((k) => k.level === e.target.value);
+                    if (first) router.push(href({ classId: first.id }));
+                  }}
+                >
+                  {levels.map((l) => (
+                    <option key={l.key} value={l.key}>
+                      {l.key} · {l.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="grid gap-1.5">
+              <label htmlFor="tt-class" className="text-sm font-semibold text-muted-foreground">
+                Class
+              </label>
+              <select id="tt-class" className={cn(SELECT, "w-auto min-w-52")} value={tt.classId} onChange={(e) => router.push(href({ classId: Number(e.target.value) }))}>
+                {tt.classes
+                  .filter((k) => k.level === level)
+                  .map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </>
         )}
         <div className="grid gap-1.5">
           <label htmlFor="tt-week" className="text-sm font-semibold text-muted-foreground">
@@ -840,11 +881,12 @@ export function TimetableGrid({ tt: served0, today, meId }: { tt: TimetableView;
                         if (e.button !== 0) return;
                         e.currentTarget.setPointerCapture(e.pointerId);
                         dragged.current = false;
-                        setPalette({ subject: s, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, target: null });
+                        setPaletteDrag({ subject: s, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, target: null });
                       }}
                       onPointerMove={paletteMove}
                       onPointerUp={paletteUp}
-                      onPointerCancel={() => setPalette(null)}
+                      onLostPointerCapture={paletteUp}
+                      onPointerCancel={() => setPaletteDrag(null)}
                       onClick={() => {
                         if (dragged.current) {
                           dragged.current = false;

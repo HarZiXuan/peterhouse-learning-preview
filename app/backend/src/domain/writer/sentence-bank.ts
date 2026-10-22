@@ -5,7 +5,7 @@
 // with the score's tone around it: 4–5 celebrate, 3 is steady, 1–2 are gentle, and "not seen yet" is never
 // described as a weakness.
 
-import { isYoungLevel, scoreOf, skillPhrase, type Pronoun, type Skill } from "@peterhouse/shared";
+import { isYoungLevel, scoreOf, skillPhrase, type Area, type AreaAnswer, type Pronoun, type Skill } from "@peterhouse/shared";
 import type { ReviewForWriting } from "../anonymise";
 import type { WrittenDraft } from "./types";
 
@@ -56,6 +56,63 @@ export function sentencesFor(skill: Skill, level: number, pronoun: Pronoun, youn
   }
 }
 
+const ZH_SUBJECT: Record<Pronoun, string> = { she: "她", he: "他" };
+
+/** "能听懂简单的华语指令" → "听懂简单的华语指令", so a sentence can put its own 能 or 还不能 in front. */
+const zhCore = (p: string) => p.replace(/^(能够|能|会)/, "");
+
+/** The Chinese sentences for one statement at one score, for an area written in Chinese. */
+export function chineseSentencesFor(skill: Skill, level: number, pronoun: Pronoun, young = false): string[] {
+  const core = zhCore(skillPhrase(skill, pronoun));
+  const who = ZH_SUBJECT[pronoun];
+  if (young && level >= 4) return [`[Child]越来越有信心，现在已经能${core}。`, `我们很高兴看到[Child]的进步：${who}现在能${core}了。`];
+  switch (level) {
+    case 1:
+      return [`[Child]目前还不能${core}，仍需要老师在旁协助。`, `${core}对[Child]来说还比较难，${who}现在还需要老师一步一步地带着做。`];
+    case 2:
+      return [`在老师的提醒下，[Child]有时能${core}，但还不能独立做到。`, `[Child]偶尔能${core}，不过还需要老师经常提醒。`];
+    case 3:
+      return [`[Child]平时能${core}。`, `在熟悉的活动中，[Child]能${core}。`];
+    case 4:
+      return [`[Child]已经能很有信心地${core}。`, `[Child]能自如地${core}，表现得很有把握。`];
+    default:
+      return [`[Child]在这方面表现非常出色，能独立${core}。`, `[Child]不但能${core}，还常常乐意帮助身边的同伴。`];
+  }
+}
+
+/** One Chinese paragraph for an area written in Chinese; it ends with what the teachers will do next. */
+function chineseArea(area: Area, ans: AreaAnswer | undefined, pronoun: Pronoun, young: boolean, start: number, plan: number): { text: string; notObserved: number } {
+  const who = ZH_SUBJECT[pronoun];
+  const sentences: string[] = [];
+  let notObserved = 0;
+  area.skills.forEach((skill, i) => {
+    const level = scoreOf(ans, skill.key);
+    if (level === 0) return void notObserved++;
+    const options = chineseSentencesFor(skill, level, pronoun, young);
+    let s = options[(start + i) % options.length];
+    if (sentences.length % 2 === 1) s = s.replace(/^\[Child\]/, who);
+    sentences.push(s);
+  });
+  const name = area.subName ?? area.name;
+  const para: string[] = [];
+  if (!sentences.length) para.push(`我们还在认识[Child]在${name}方面的表现，下学期会和您分享更多。`);
+  else {
+    para.push(...sentences);
+    if (notObserved) para.push(`${name}的其他方面，我们还在继续观察。`);
+  }
+  if (ans?.note?.trim()) para.push(`老师留意到：${cleanQuote(ans.note)}。`);
+  if (sentences.length) {
+    const plans = [
+      `下学期，我们会多安排有趣的${name}活动，帮助[Child]继续进步。`,
+      `为了帮助${who}，我们会在课堂上给[Child]更多用${name}表达的机会。`,
+      `接下来，我们会每天和[Child]一起做一些简短有趣的${name}练习，增强${who}的信心。`,
+      `我们会继续鼓励[Child]多听、多说、多读${name}。`,
+    ];
+    para.push(plans[plan % plans.length]);
+  }
+  return { text: para.join(""), notObserved };
+}
+
 function hash(seed: string) {
   let h = 2166136261;
   for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
@@ -86,6 +143,13 @@ export function writeWithSentenceBank(review: ReviewForWriting, seed: string): W
     const ans = answers[area.key];
     const sentences: string[] = [];
     const start = hash(`${seed}:${area.key}`);
+    if (area.language === "zh") {
+      const zh = chineseArea(area, ans, pronoun, isYoungLevel(review.level), start, rubric.areas.indexOf(area));
+      areas[area.key] = zh.text;
+      notObserved += zh.notObserved;
+      total += area.skills.length;
+      continue;
+    }
     area.skills.forEach((skill, i) => {
       total++;
       const level = scoreOf(ans, skill.key);
@@ -142,7 +206,8 @@ export function writeWithSentenceBank(review: ReviewForWriting, seed: string): W
   const strengthClauses = review.strengths
     .map((k) => skillInfo.get(k))
     .filter((x): x is NonNullable<typeof x> => !!x && x.level > 0)
-    .map((x) => skillPhrase(x.skill, pronoun));
+    // A skill from an area written in Chinese is named by its area in the English closing.
+    .map((x) => (x.area.language === "zh" ? `does well in ${x.area.name}` : skillPhrase(x.skill, pronoun)));
   const nextAreas = [...new Set(review.nextSteps.map((k) => skillInfo.get(k)?.area.name).filter((x): x is string => !!x))];
   const closing = [
     strengthClauses.length === 2

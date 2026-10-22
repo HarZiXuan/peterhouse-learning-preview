@@ -38,6 +38,7 @@ export async function UpcomingStrip({ classId }: { classId?: number }) {
           {next && (
             <span className="text-muted-foreground">
               Next: <b className="text-foreground">{subject(next.subjectId)?.name}</b>, {time(next.start)}
+              {next.teacherId && data.teachers.find((t) => t.id === next.teacherId) && ` · ${data.teachers.find((t) => t.id === next.teacherId)!.name}`}
               {next.room && ` · ${next.room}`}
             </span>
           )}

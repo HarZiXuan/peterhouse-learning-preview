@@ -44,6 +44,8 @@ describe("subjects", () => {
     expect(subjects.map((s) => s.name)).toEqual(["English", "Chinese 华文", "Maths", "Happy Hour"]);
     const art = await T.createSubject({ name: "Art", color: "peach" });
     await expect(T.createSubject({ name: "Art", color: "sky" })).rejects.toMatchObject({ status: 409 });
+    // Each subject has its own colour.
+    await expect(T.createSubject({ name: "Drama", color: "peach" })).rejects.toMatchObject({ status: 409, message: /colour/ });
     await T.updateSubject(art, { name: "Art and craft", color: "lilac", active: true });
     expect((await T.listSubjects()).find((s) => s.id === art)).toMatchObject({ name: "Art and craft", color: "lilac" });
     await T.deleteSubject(art);
@@ -71,8 +73,11 @@ describe("a class's weekly lessons", () => {
       { id: wong.id, name: "Ms Wong", subjectIds: [sub("Chinese").id] },
     ]);
     await T.saveLesson(admin, { ...lesson, subjectId: sub("Happy Hour").id, start: "11:00", end: "11:30", teacherId: null });
-    // A subject on a timetable cannot be deleted, only hidden.
-    await expect(T.deleteSubject(sub("Happy Hour").id)).rejects.toMatchObject({ status: 409 });
+    // Deleting a subject takes its lessons off the timetable with it.
+    const music = await T.createSubject({ name: "Music", color: "teal" });
+    await T.saveLesson(admin, { ...lesson, subjectId: music, start: "12:00", end: "12:30", teacherId: null });
+    await T.deleteSubject(music);
+    expect(((await T.timetableView(admin, k1.id)) as { lessons: { subjectId: number }[] }).lessons.some((l) => l.subjectId === music)).toBe(false);
     expect((await T.timetableView(admin, k1.id)) as { lessons: unknown[] }).toMatchObject({ className: "K1 Sunflower", editable: "all" });
   });
 
@@ -110,24 +115,51 @@ describe("a class's weekly lessons", () => {
 });
 
 describe("subject teachers and the children", () => {
-  it("see the class, rate it, and cannot write the report", async () => {
+  it("rate their own area, send their part to the lead, and the lead finishes the report", async () => {
     const W = await import("../src/domain/workspace");
     const R = await import("../src/domain/reviews");
     const A = await import("../src/domain/approval");
+    const C = await import("../src/domain/classes");
     const mia = await k1.add("Mia", "she");
     // Ms Wong teaches Chinese in both K1 classes, so she sees both classes' children; Ms Tan only her own.
     expect((await W.listChildren(wong)).map((c) => c.name)).toEqual(["Mia"]);
     const r = await R.openReview((await R.getReviewRow(mia))!);
-    expect(await R.isSubjectOnly(wong, r)).toBe(true);
-    expect(await R.isSubjectOnly(lim, r)).toBe(false);
-    const ans = (key: string): AreaAnswer => ({ skills: Object.fromEntries(r.rubric.areas.find((a) => a.key === key)!.skills.map((s) => [s.key, { level: 4, touched: true }])), note: "", visited: true });
+    const ans = (key: string, level = 4): AreaAnswer => ({ skills: Object.fromEntries(r.rubric.areas.find((a) => a.key === key)!.skills.map((s) => [s.key, { level: level as 4, touched: true }])), note: "", visited: true });
+    // She is tagged with Chinese in this class, so the Chinese area is hers; areas nobody teaches stay with the lead.
+    const areaTeachers = (await C.classDetail(k1.id)).areaTeachers;
+    expect(areaTeachers.find((a) => a.key === "chi")).toMatchObject({ teacher: { id: wong.id }, source: "subject" });
+    expect(areaTeachers.find((a) => a.key === "sed")).toMatchObject({ teacher: { id: lim.id }, source: "lead" });
+    // The class page can set another teacher, and setting none goes back to whoever teaches it.
+    await C.setAreaTeacher(k1.id, "chi", lim.id);
+    expect((await C.classDetail(k1.id)).areaTeachers.find((a) => a.key === "chi")).toMatchObject({ teacher: { id: lim.id }, source: "set" });
+    await expect(R.saveArea(wong, mia, "chi", ans("chi"))).rejects.toMatchObject({ status: 403 });
+    await C.setAreaTeacher(k1.id, "chi", null);
     expect((await R.saveArea(wong, mia, "chi", ans("chi"))).ok).toBe(true);
-    for (const a of r.rubric.areas) if (a.key !== "chi") await R.saveArea(wong, mia, a.key, ans(a.key));
+    await expect(R.saveArea(wong, mia, "eng", ans("eng"))).rejects.toMatchObject({ status: 403 });
+    expect((await W.listChildren(wong))[0]).toMatchObject({ iAmLead: false, myParts: [{ area: "Chinese", done: false }] });
+    // She has her paragraph written, checks it, and sends it; then it is the lead's to change.
+    await expect(R.sendPart(wong, mia, "chi")).rejects.toMatchObject({ status: 409 });
+    const part = await R.writePart(wong, mia, "chi");
+    expect(part.ok && part.text).toBeTruthy();
+    await R.savePartText(wong, mia, "chi", "Mia 在华文课上很投入。");
+    // The lead rates the rest, but cannot write the report until Ms Wong's part is in, nor change her area meanwhile.
+    for (const a of r.rubric.areas) if (a.key !== "chi") await R.saveArea(lim, mia, a.key, ans(a.key));
+    await expect(R.saveArea(lim, mia, "chi", ans("chi", 3))).rejects.toMatchObject({ status: 403, message: expect.stringContaining("Ms Wong is still working") });
+    expect((await W.listChildren(lim)).find((c) => c.name === "Mia")).toMatchObject({ iAmLead: true, waitingFor: [{ area: "Chinese", teacher: "Ms Wong" }] });
+    expect(await R.writeDraft(lim, mia)).toMatchObject({ ok: false, error: expect.stringContaining("Ms Wong (Chinese)") });
+    await R.sendPart(wong, mia, "chi");
+    await expect(R.saveArea(wong, mia, "chi", ans("chi", 3))).rejects.toMatchObject({ status: 409 });
+    // The lead may still change her ratings; the report uses the paragraph she checked.
+    expect((await R.saveArea(lim, mia, "chi", ans("chi", 4))).ok).toBe(true);
     await expect(R.writeDraft(wong, mia)).rejects.toMatchObject({ status: 403 });
     expect((await R.writeDraft(lim, mia)).ok).toBe(true);
+    expect((await R.getReviewRow(mia))!.draft!.paragraphs.find((p) => p.key === "area:chi")!.text).toBe("Mia 在华文课上很投入。");
     await expect(A.submitForReview(wong, mia)).rejects.toMatchObject({ status: 403 });
     expect((await A.workflowFor(wong, (await R.getReviewRow(mia))!)).canSubmit).toBe(false);
     expect((await A.workflowFor(lim, (await R.getReviewRow(mia))!)).canSubmit).toBe(true);
+    // She can take her part back to change it while the report is still with the teachers.
+    await R.reopenPart(wong, mia, "chi");
+    expect((await R.saveArea(wong, mia, "chi", ans("chi", 3))).ok).toBe(true);
   });
 
   it("lose the class, and its lessons, when the administrator takes them off it", async () => {

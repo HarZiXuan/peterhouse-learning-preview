@@ -202,6 +202,29 @@ describe("encryption at rest", () => {
     expect(covers[0].id).not.toBe(cover.id);
     expect((await P.listPhotos(id)).length).toBe(3);
   });
+
+  it("keeps one profile photo per child that the administrator and the child's teachers share", async () => {
+    const W = await import("../src/domain/workspace");
+    const P = await import("../src/domain/photos");
+    const R = await import("../src/domain/reviews");
+    const id = await cls.add("Profile Child", "he");
+    const childId = (await R.getReviewRow(id))!.child_id;
+    const jpeg = await sharp({ create: { width: 64, height: 48, channels: 3, background: "#3c3" } }).jpeg().toBuffer();
+    // The administrator adds it; the class teacher sees the same photo, and another class's teacher cannot.
+    expect(await P.canSeeChild(admin, childId)).toBe(true);
+    expect(await P.canSeeChild(teacher, childId)).toBe(true);
+    expect(await P.canSeeChild(otherTeacher, childId)).toBe(false);
+    const at = await P.setChildPhoto(childId, jpeg);
+    const stored = (await t.pool.query("SELECT photo FROM children WHERE id = $1", [childId])).rows[0].photo as Buffer;
+    expect(stored.includes(jpeg.subarray(0, 40))).toBe(false);
+    expect((await P.readChildPhoto(childId))!.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))).toBe(true);
+    const url = `/api/children/${childId}/photo?v=${new Date(at).getTime()}`;
+    expect((await W.listChildren(teacher)).find((c) => c.reviewId === id)!.photo).toBe(url);
+    // It is the cover of the report.
+    expect((await R.buildReportData((await R.getReviewRow(id))!)).coverPhoto).toBe(url);
+    await P.clearChildPhoto(childId);
+    expect(await P.readChildPhoto(childId)).toBeNull();
+  });
 });
 
 describe("semesters", () => {
@@ -262,7 +285,7 @@ describe("migrations", () => {
     const { migrate } = await import("../src/migrate");
     expect(await migrate(t.pool, () => {})).toEqual([]);
     const rows = (await t.pool.query("SELECT version, checksum FROM schema_migrations")).rows;
-    expect(rows.map((r) => r.version)).toEqual(["0001_init.sql", "0002_teacher_questions.sql", "0003_classes.sql", "0004_review_workflow.sql", "0005_calendar.sql", "0006_subject_timetable.sql", "0007_questions_by_level.sql", "0008_subject_teachers.sql", "0009_child_profile.sql", "0010_child_last_name.sql", "0011_week_timetables.sql", "0012_subjects_plain.sql", "0013_questions_five_levels.sql", "0014_graduated_after.sql", "0015_pronouns_he_she.sql"]);
+    expect(rows.map((r) => r.version)).toEqual(["0001_init.sql", "0002_teacher_questions.sql", "0003_classes.sql", "0004_review_workflow.sql", "0005_calendar.sql", "0006_subject_timetable.sql", "0007_questions_by_level.sql", "0008_subject_teachers.sql", "0009_child_profile.sql", "0010_child_last_name.sql", "0011_week_timetables.sql", "0012_subjects_plain.sql", "0013_questions_five_levels.sql", "0014_graduated_after.sql", "0015_pronouns_he_she.sql", "0016_chinese_in_chinese.sql", "0017_subject_colours.sql", "0018_child_photo.sql", "0019_area_parts.sql"]);
     expect(rows[0].checksum).toMatch(/^[0-9a-f]{64}$/);
   });
 });

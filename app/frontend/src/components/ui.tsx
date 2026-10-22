@@ -32,10 +32,11 @@ export function initials(name: string): string {
 }
 
 /** The child's cover photo, or their initials. */
-export function ChildAvatar({ photoId, name, size = 40 }: { photoId?: number | null; name: string; size?: number }) {
+/** The child's profile photo, or their initials when there is none. */
+export function ChildAvatar({ src, name, size = 40 }: { src?: string | null; name: string; size?: number }) {
   return (
     <Avatar style={{ width: size, height: size }} className="bg-secondary">
-      {photoId ? <AvatarImage src={`/api/photos/${photoId}`} alt="" className="object-cover" /> : null}
+      {src ? <AvatarImage src={src} alt="" className="object-cover" /> : null}
       <AvatarFallback className="bg-secondary font-heading font-semibold text-muted-foreground" style={{ fontSize: Math.max(11, size * 0.34) }} aria-hidden>
         {initials(name)}
       </AvatarFallback>

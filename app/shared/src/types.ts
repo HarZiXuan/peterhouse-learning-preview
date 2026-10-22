@@ -42,6 +42,8 @@ export type Skill = {
   levels?: ClassLevel[];
 };
 
+export type AreaLanguage = "en" | "zh";
+
 export type Area = {
   key: string;
   name: string;
@@ -50,6 +52,8 @@ export type Area = {
   subName?: string;
   /** Icon name for the form and the report (eng, chi, mat, sed, enr). */
   icon?: string;
+  /** The language this area's questions and report paragraph are written in. Missing means English. */
+  language?: AreaLanguage;
   skills: Skill[];
   /** Short text question, answered in a sentence or two ("What did {name} love most this semester?"). */
   love?: { key: string; text: string };
@@ -72,14 +76,28 @@ export type Pronoun = "she" | "he";
 export type ReviewStatus = "not_started" | "draft" | "ready" | "written" | "submitted" | "changes_requested" | "approved";
 export type TermStatus = "open" | "closed" | "locked";
 
-export const STATUS_LABEL: Record<ReviewStatus, string> = {
-  not_started: "Not started",
-  draft: "Draft",
-  ready: "Ready",
-  written: "Written",
+/**
+ * The four stages a report is in, everywhere staff see one (the Reports tabs, Children, a class, a teacher):
+ * with teachers (from no ratings up to written but not sent), waiting for review, changes requested, approved.
+ */
+export type ReportStage = "submitted" | "changes_requested" | "approved" | "not_done";
+export const REPORT_STAGES: ReportStage[] = ["submitted", "changes_requested", "approved", "not_done"];
+export const stageOf = (s: ReviewStatus): ReportStage => (s === "submitted" || s === "changes_requested" || s === "approved" ? s : "not_done");
+export const STAGE_LABEL: Record<ReportStage, string> = {
   submitted: "Waiting for review",
   changes_requested: "Changes requested",
   approved: "Approved",
+  not_done: "With teachers",
+};
+/** A status in words: its stage. */
+export const STATUS_LABEL: Record<ReviewStatus, string> = {
+  not_started: STAGE_LABEL.not_done,
+  draft: STAGE_LABEL.not_done,
+  ready: STAGE_LABEL.not_done,
+  written: STAGE_LABEL.not_done,
+  submitted: STAGE_LABEL.submitted,
+  changes_requested: STAGE_LABEL.changes_requested,
+  approved: STAGE_LABEL.approved,
 };
 
 export type SkillAnswer = {

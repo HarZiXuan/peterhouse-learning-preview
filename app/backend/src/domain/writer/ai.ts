@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "../../config";
+import type { AreaLanguage } from "@peterhouse/shared";
 import type { AiSettings } from "../school";
 import type { WrittenDraft } from "./types";
 
@@ -22,16 +23,31 @@ export function getSystemPrompt(): string {
   }
 }
 
-export function draftInstruction(areaKeys: { key: string; name: string }[]) {
+const IN_CHINESE = "write this paragraph in Simplified Chinese";
+
+export function draftInstruction(areaKeys: { key: string; name: string; language?: AreaLanguage }[]) {
   const shape = `{"opening": "...", "areas": {${areaKeys.map((a) => `"${a.key}": "..."`).join(", ")}}, "closing": "...", "home_ideas": ["...", "..."]}`;
   return `Write the review from these anonymous answers. Reply with JSON only, exactly in this shape:\n${shape}\nArea keys: ${areaKeys
-    .map((a) => `${a.key} = ${a.name}`)
+    .map((a) => `${a.key} = ${a.name}${a.language === "zh" ? ` (${IN_CHINESE})` : ""}`)
     .join("; ")}.`;
 }
 
-export function paragraphInstruction(section: string, current: string, tone?: string) {
+export function paragraphInstruction(section: string, current: string, tone?: string, language?: AreaLanguage, request?: string) {
   const toneLine = tone ? ` Make it ${tone.toLowerCase()} than the current version.` : "";
-  return `Rewrite only the ${section} paragraph from these anonymous answers.${toneLine} Current version:\n"""${current}"""\nReply with JSON only: {"text": "..."}`;
+  const langLine = language === "zh" ? ` This area is written in Chinese: ${IN_CHINESE}.` : "";
+  // The teacher's own words about what to change come first; the writing guide still applies (no scores, no labels).
+  const askLine = request
+    ? ` The teacher asks for this change, and it matters most: """${request}""". Do it, keeping everything else in the guide. If it adds a fact about the child, use it as the teacher's own observation.`
+    : " Write it differently from the current version: new sentences and a different opening, the same facts.";
+  return `Rewrite only the ${section} paragraph from these anonymous answers.${askLine}${toneLine}${langLine} Current version:\n"""${current}"""\nReply with JSON only: {"text": "..."}`;
+}
+
+/** One area's paragraph only, for the teacher who rates that area. */
+export function partInstruction(areaName: string, language?: AreaLanguage, current?: string, request?: string) {
+  const langLine = language === "zh" ? ` This area is written in Chinese: ${IN_CHINESE}.` : "";
+  const askLine = request ? ` The teacher asks for this, and it matters most: """${request}""". Do it, keeping everything else in the guide.` : "";
+  const currentLine = current ? ` Their current version, to improve on:\n"""${current}"""` : "";
+  return `Write only the ${areaName} paragraph of the review from these anonymous answers, following the guide for an area paragraph.${langLine}${askLine}${currentLine}\nReply with JSON only: {"text": "..."}`;
 }
 
 export class WriterError extends Error {}

@@ -1,15 +1,17 @@
 // Classes, their teachers and their children (CHANGES-TO-MAKE change 4). Only an administrator changes any of this;
 // a teacher sees the classes they are in. A child's enrolment in a class for a semester is their review.
-import type { ClassChild, ClassDetail, ClassesView, ClassLevel, ClassSummary, LevelProblem, NewChildInput, Pronoun, SessionUser, StaffRef, SubjectTeacher } from "@peterhouse/shared";
-import { CLASS_LEVEL_KEYS, birthYearOf, classCapacity, levelForBirthday } from "@peterhouse/shared";
+import type { ClassChild, ClassDetail, ClassesView, ClassLevel, ClassSummary, LevelProblem, NewChildInput, Pronoun, SessionUser, StaffRef, SubjectColor, SubjectTeacher } from "@peterhouse/shared";
+import { CLASS_LEVEL_KEYS, birthYearOf, childPhotoUrl, levelForBirthday } from "@peterhouse/shared";
 import { many, one, run, tx, type Db } from "../db";
 import { HttpError, notFound } from "../http";
 import { openText, sealJson, sealText } from "./records";
 import { clearOutsideTeachers, TAUGHT_BY } from "./staff";
 import { listSubjects } from "./timetable";
+import { ownersOf } from "./parts";
+import { publishedRubric } from "./questions";
 import { workspace } from "./workspace";
 
-const LEVEL_ORDER = `array_position(ARRAY[${CLASS_LEVEL_KEYS.map((k) => `'${k}'`).join(",")}]::text[], k.level)`;
+export const LEVEL_ORDER = `array_position(ARRAY[${CLASS_LEVEL_KEYS.map((k) => `'${k}'`).join(",")}]::text[], k.level)`;
 
 const termYear = async (termId: number, c?: Db) => (await one<{ year: number }>("SELECT year FROM terms WHERE id = $1", [termId], c))!.year;
 
@@ -40,8 +42,16 @@ async function summaries(termId: number, filter: { all: boolean; userId: number;
     [ids],
     c,
   );
+  const tagged = await many<{ class_id: number; name: string; color: SubjectColor }>(
+    `SELECT x.class_id, s.name, s.color FROM class_subject_teachers x JOIN subjects s ON s.id = x.subject_id
+      WHERE x.class_id = ANY($1::bigint[]) AND x.user_id = $2 ORDER BY s.position, s.name`,
+    [ids, filter.userId],
+    c,
+  );
   return rows.map((k) => {
     const mine = staff.filter((s) => s.class_id === k.id);
+    const me = mine.find((s) => Number(s.id) === Number(filter.userId));
+    const mySubjects = tagged.filter((t) => t.class_id === k.id).map((t) => ({ name: t.name, color: t.color }));
     const lead = mine.find((s) => s.role === "lead");
     const co = mine.filter((s) => s.role === "co").map((s) => ({ id: s.id, name: s.name }));
     return {
@@ -52,7 +62,8 @@ async function summaries(termId: number, filter: { all: boolean; userId: number;
       lead: lead ? { id: lead.id, name: lead.name } : null,
       co,
       children: counts.find((n) => n.class_id === k.id)?.n ?? 0,
-      capacity: classCapacity(k.level, (lead ? 1 : 0) + co.length),
+      myRole: me ? me.role : mySubjects.length ? "subject" : null,
+      mySubjects,
     };
   });
 }
@@ -77,11 +88,12 @@ type PupilRow = {
   date_of_birth: string;
   pronoun: Pronoun;
   child_status: "active" | "left";
+  photo_at: string | null;
 };
 
 const PUPIL_SELECT = `
   SELECT r.id AS review_id, r.child_id, r.class_id, k.level AS class_level, r.status, r.draft IS NOT NULL AS has_report,
-         c.preferred_name, c.last_name, c.legal_name, c.chinese_name, c.date_of_birth, c.pronoun, c.status AS child_status
+         c.preferred_name, c.last_name, c.legal_name, c.chinese_name, c.date_of_birth, c.pronoun, c.status AS child_status, c.photo_at
     FROM reviews r JOIN children c ON c.id = r.child_id JOIN classes k ON k.id = r.class_id`;
 
 function pupil(p: PupilRow, year: number): ClassChild & { classId: number; classLevel: ClassLevel } {
@@ -103,6 +115,7 @@ function pupil(p: PupilRow, year: number): ClassChild & { classId: number; class
     status: p.status,
     hasReport: p.has_report,
     left: p.child_status === "left",
+    photo: childPhotoUrl(p.child_id, p.photo_at),
   };
 }
 
@@ -136,7 +149,29 @@ export async function classDetail(id: number): Promise<ClassDetail> {
   // A lead or co-teacher with no subjects teaches every subject.
   const teacherSubjects = Object.fromEntries(taught.filter((t) => staff.has(t.id)).map((t) => [t.id, t.subjectIds]));
   const subjectTeachers = taught.filter((t) => !staff.has(t.id));
-  return { ...summary, year, pupils, subjectTeachers, teacherSubjects, subjects: (await listSubjects()).filter((x) => x.active) };
+  const areas = (await publishedRubric()).rubric.areas;
+  const owners = (await ownersOf([id], areas.map((a) => a.key))).get(id)!;
+  const areaTeachers = areas.map((a) => {
+    const o = owners[a.key];
+    return { key: a.key, name: a.name, teacher: o ? { id: o.id, name: o.name } : null, source: o?.source ?? ("lead" as const) };
+  });
+  return { ...summary, year, pupils, subjectTeachers, teacherSubjects, subjects: (await listSubjects()).filter((x) => x.active), areaTeachers };
+}
+
+/** Who rates one learning area of this class's reports; null hands it back to the lead teacher. */
+export async function setAreaTeacher(classId: number, areaKey: string, userId: number | null) {
+  await openClass(classId);
+  if (!(await publishedRubric()).rubric.areas.some((a) => a.key === areaKey)) throw new HttpError(400, "Choose one of the report's learning areas.");
+  if (userId === null) return void (await run("DELETE FROM class_area_teachers WHERE class_id = $1 AND area_key = $2", [classId, areaKey]));
+  const teaches = await one(
+    "SELECT 1 FROM class_staff WHERE class_id = $1 AND user_id = $2 UNION SELECT 1 FROM class_subject_teachers WHERE class_id = $1 AND user_id = $2",
+    [classId, userId],
+  );
+  if (!teaches) throw new HttpError(400, "Choose one of this class's teachers. Add them to the class first.");
+  await run(
+    "INSERT INTO class_area_teachers (class_id, area_key, user_id) VALUES ($1, $2, $3) ON CONFLICT (class_id, area_key) DO UPDATE SET user_id = EXCLUDED.user_id",
+    [classId, areaKey, userId],
+  );
 }
 
 function uniqueName(e: unknown): never {

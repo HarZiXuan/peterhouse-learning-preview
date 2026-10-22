@@ -13,6 +13,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { DownloadPdf } from "./child/[id]/report/DownloadPdf";
 import { approveAction, requestChangesAction, submitForReviewAction, takeBackAction, takeOverAction } from "./actions";
 
 // Singapore time on the server and in every browser, so the page reads the same wherever it is drawn.
@@ -138,6 +139,8 @@ export function WorkflowPanel({
   if (w.status === "approved") {
     title = "Approved";
     body = `${w.approved?.by ?? "An administrator"} approved this report${w.approved ? ` on ${when(w.approved.at)}` : ""}. Download the PDF for the family.`;
+    // The report page has its own download button; the review page needs one here.
+    if (inApprovals) actions.push(<DownloadPdf key="pdf" reviewId={reviewId} childName={childName} />);
     if (admin) actions.push(<RequestChanges key="rc" reviewId={reviewId} childName={childName} teacher={teacher ?? null} busy={busy} run={run} />);
   } else if (w.takenOver) {
     title = admin ? "You have taken this report over" : "An administrator is finishing this report";

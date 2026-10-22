@@ -15,7 +15,7 @@ const TABS: { key: ApprovalStatusFilter; label: string; empty: string }[] = [
   { key: "waiting", label: "Waiting for review", empty: "Nothing is waiting. Reports appear here when a teacher sends one for review." },
   { key: "changes", label: "Changes requested", empty: "No report is back with its teacher." },
   { key: "approved", label: "Approved", empty: "No report is approved yet this semester." },
-  { key: "not_submitted", label: "Not sent yet", empty: "Every child’s report has been sent for review." },
+  { key: "not_submitted", label: "With teachers", empty: "Every child’s report has been sent for review." },
 ];
 
 /** How far a report not yet sent has got, from the class board's counts. */
@@ -104,7 +104,7 @@ export async function ReviewQueue({ sp, termId }: { sp: QueueParams; termId?: nu
           <p className="max-w-md text-muted-foreground">{tab.empty}</p>
           {status === "waiting" && view.counts.not_submitted > 0 && (
             <Link href={tabHref("not_submitted")} className="font-bold text-primary hover:underline">
-              See the {view.counts.not_submitted} not sent yet
+              See the {view.counts.not_submitted} still with teachers
             </Link>
           )}
         </Card>

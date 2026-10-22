@@ -6,14 +6,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { TriangleAlert } from "lucide-react";
 import type { ClassChild, ClassSummary } from "@peterhouse/shared";
-import { CLASS_LEVELS, LEVEL_PROBLEM_TEXT, STATUS_LABEL } from "@peterhouse/shared";
+import { CLASS_LEVELS, LEVEL_PROBLEM_TEXT, REPORT_STAGES, STAGE_LABEL, STATUS_LABEL, stageOf } from "@peterhouse/shared";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { EmptyTable, SearchBox, SortHead, STICKY_CELL, useSort, type Column } from "@/components/sort-table";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { SELECT } from "../AddChild";
-import { LEVEL_TINT, STATUS_ORDER, STATUS_TONE } from "../classes/shared";
+import { LEVEL_TINT, STATUS_TONE } from "../classes/shared";
+import { ChildAvatar } from "@/components/ui";
 
 const birthday = (d: string) => (d ? new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "");
 
@@ -36,7 +37,7 @@ export function ChildrenTable({ pupils, classes }: { pupils: ClassChild[]; class
     { key: "level", label: "Level", sort: (c) => CLASS_LEVELS.findIndex((l) => l.key === classOf.get(c.classId)?.level) },
     { key: "class", label: "Class", sort: (c) => classOf.get(c.classId)?.name ?? "" },
     { key: "teachers", label: "Class teachers", sort: (c) => teachersOf(c) || "~" },
-    { key: "status", label: "Report", sort: (c) => (c.left ? 99 : STATUS_ORDER.indexOf(c.status)) },
+    { key: "status", label: "Report", sort: (c) => (c.left ? 99 : REPORT_STAGES.indexOf(stageOf(c.status))) },
   ];
   const left = pupils.filter((c) => c.left).length;
   const shown = pupils.filter(
@@ -45,7 +46,7 @@ export function ChildrenTable({ pupils, classes }: { pupils: ClassChild[]; class
       `${c.name} ${c.chineseName}`.toLowerCase().includes(q.trim().toLowerCase()) &&
       (!level || classOf.get(c.classId)?.level === level) &&
       (!classId || c.classId === classId) &&
-      (!status || c.status === status),
+      (!status || stageOf(c.status) === status),
   );
   const { sorted, sort, toggle } = useSort(shown, columns);
 
@@ -53,7 +54,16 @@ export function ChildrenTable({ pupils, classes }: { pupils: ClassChild[]; class
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <SearchBox value={q} onChange={setQ} label="Search children by name" />
-        <select aria-label="Level" className={cn(SELECT, "w-auto min-w-32")} value={level} onChange={(e) => setLevel(e.target.value)}>
+        <select
+          aria-label="Level"
+          className={cn(SELECT, "w-auto min-w-32")}
+          value={level}
+          onChange={(e) => {
+            setLevel(e.target.value);
+            // The class list follows the level: a class of another level is no longer a choice.
+            if (e.target.value && classOf.get(classId)?.level !== e.target.value) setClassId(0);
+          }}
+        >
           <option value="">All levels</option>
           {CLASS_LEVELS.map((l) => (
             <option key={l.key} value={l.key}>
@@ -62,8 +72,8 @@ export function ChildrenTable({ pupils, classes }: { pupils: ClassChild[]; class
           ))}
         </select>
         <select aria-label="Class" className={cn(SELECT, "w-auto min-w-40")} value={classId || ""} onChange={(e) => setClassId(Number(e.target.value))}>
-          <option value="">All classes</option>
-          {classes.map((k) => (
+          <option value="">{level ? `All ${level} classes` : "All classes"}</option>
+          {classes.filter((k) => !level || k.level === level).map((k) => (
             <option key={k.id} value={k.id}>
               {k.name}
             </option>
@@ -71,9 +81,9 @@ export function ChildrenTable({ pupils, classes }: { pupils: ClassChild[]; class
         </select>
         <select aria-label="Report status" className={cn(SELECT, "w-auto min-w-40")} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">Any report status</option>
-          {STATUS_ORDER.map((s) => (
+          {REPORT_STAGES.map((s) => (
             <option key={s} value={s}>
-              {STATUS_LABEL[s]}
+              {STAGE_LABEL[s]}
             </option>
           ))}
         </select>
@@ -98,10 +108,15 @@ export function ChildrenTable({ pupils, classes }: { pupils: ClassChild[]; class
                 return (
                   <TableRow key={c.reviewId} className={cn("cursor-pointer", c.left && "text-muted-foreground")} onClick={() => router.push(`/children/${c.childId}`)}>
                     <TableCell className={cn(STICKY_CELL, "py-3")}>
-                      <Link href={`/children/${c.childId}`} onClick={(e) => e.stopPropagation()} className="font-heading text-base font-semibold text-foreground outline-none hover:text-primary focus-visible:ring-[3px] focus-visible:ring-ring/50">
-                        {c.name}
-                      </Link>
-                      {c.chineseName && <span className="ml-2 text-sm text-muted-foreground">{c.chineseName}</span>}
+                      <span className="flex items-center gap-3">
+                        <ChildAvatar src={c.photo} name={c.name} size={36} />
+                        <span>
+                          <Link href={`/children/${c.childId}`} onClick={(e) => e.stopPropagation()} className="font-heading text-base font-semibold text-foreground outline-none hover:text-primary focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                            {c.name}
+                          </Link>
+                          {c.chineseName && <span className="ml-2 text-sm text-muted-foreground">{c.chineseName}</span>}
+                        </span>
+                      </span>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">{birthday(c.dateOfBirth) || <span className="text-muted-foreground">No birthday</span>}</TableCell>
                     <TableCell>

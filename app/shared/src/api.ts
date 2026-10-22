@@ -1,5 +1,5 @@
 // The contract between the frontend and the backend: every shape that crosses /api.
-import type { AreaAnswer, ClassRole, Level, Pronoun, ReviewStatus, Rubric, Role } from "./types";
+import type { AreaAnswer, AreaLanguage, ClassRole, Level, Pronoun, ReviewStatus, Rubric, Role } from "./types";
 import type { ClassLevel, LevelProblem } from "./classes";
 
 export type SessionUser = { id: number; email: string; name: string; role: Role; mustChangePassword: boolean };
@@ -41,8 +41,10 @@ export type ClassSummary = {
   co: StaffRef[];
   /** Active children (not those marked as left). */
   children: number;
-  /** Most children the class may have for its teachers (the level's ratio × teachers). */
-  capacity: number;
+  /** How the person asking teaches this class: lead, co-teacher, subject teacher, or null (an administrator who does not). */
+  myRole: ClassRole | "subject" | null;
+  /** The subjects they are tagged with here; none means a lead or co-teacher teaches every subject. */
+  mySubjects: { name: string; color: SubjectColor }[];
 };
 
 export type ClassChild = {
@@ -63,12 +65,25 @@ export type ClassChild = {
   status: ReviewStatus;
   hasReport: boolean;
   left: boolean;
+  /** The child's profile photo (a URL that changes when the photo does), or null. */
+  photo: string | null;
 };
 
 /** Someone who teaches only some subjects in a class (change 12): they see its children and rate them, but do not write the report. */
 export type SubjectTeacher = StaffRef & { subjectIds: number[] };
 
-export type ClassDetail = ClassSummary & { pupils: ClassChild[]; year: number; subjectTeachers: SubjectTeacher[]; teacherSubjects: Record<number, number[]>; subjects: Subject[] };
+export type ClassDetail = ClassSummary & {
+  pupils: ClassChild[];
+  year: number;
+  subjectTeachers: SubjectTeacher[];
+  teacherSubjects: Record<number, number[]>;
+  subjects: Subject[];
+  /**
+   * The report's learning areas and who rates each in this class: set on the class page, else the teacher tagged with
+   * the matching subject, else the lead teacher.
+   */
+  areaTeachers: { key: string; name: string; teacher: StaffRef | null; source: "set" | "subject" | "lead" }[];
+};
 
 export type ClassesView = {
   year: number;
@@ -112,12 +127,27 @@ export type ChildProfile = ChildInfo & {
   pronoun: Pronoun;
   left: boolean;
   leftAt: string | null;
+  /** The child's profile photo (a URL that changes when the photo does), or null. */
+  photo: string | null;
   /** Newest first. */
   semesters: ChildSemester[];
 };
 
 export type ChildListItem = {
   reviewId: number;
+  /** This person is the lead teacher of the child's class (they finish and send the report). */
+  iAmLead: boolean;
+  /** This person's own parts of the report: the areas they rate, and whether each was sent to the lead. */
+  myParts: { area: string; done: boolean }[];
+  /** The parts the lead is still waiting for, by area and teacher. */
+  waitingFor: { area: string; teacher: string }[];
+  /**
+   * The report is still being put together from the teachers' parts. False once the lead has written it, it was sent
+   * for review or approved, or an administrator took it over: then no part is anyone's to do.
+   */
+  partsOpen: boolean;
+  /** An administrator has taken the report over. */
+  takenOver: boolean;
   name: string;
   chineseName: string;
   answered: number;
@@ -125,7 +155,8 @@ export type ChildListItem = {
   hasReport: boolean;
   /** One entry per domain: how many of its statements are rated or marked "Not seen yet". */
   areas: { name: string; answered: number; total: number }[];
-  coverPhotoId: number | null;
+  /** The child's profile photo (a URL that changes when the photo does), or null. */
+  photo: string | null;
   classId: number;
   className: string;
   status: ReviewStatus;
@@ -166,6 +197,9 @@ export type Workflow = {
 
 export type ReviewView = {
   reviewId: number;
+  childId: number;
+  /** The child's profile photo (a URL that changes when the photo does), or null. */
+  photo: string | null;
   childName: string;
   chineseName: string;
   pronoun: Pronoun;
@@ -178,21 +212,43 @@ export type ReviewView = {
   semester: string;
   updatedAt: string;
   workflow: Workflow;
-  /** A subject teacher rates the children but does not write the report. */
-  subjectOnly: boolean;
+  /** This person brings the parts together and sends the report: the class's lead teacher. */
+  isLead: boolean;
+  leadName: string | null;
+  /** May write the whole report: the lead teacher, or an administrator who took the report over. */
+  canWriteReport: boolean;
+  /** Each learning area's part: who rates it, its checked paragraph, and whether it was sent to the lead. */
+  parts: Record<string, PartView>;
+  /** The parts the lead is still waiting for. */
+  waitingFor: { area: string; teacher: string }[];
+};
+
+export type PartView = {
+  /** Who rates this area in this class (null: any of the class's teachers). */
+  owner: StaffRef | null;
+  /** It is this person's part. */
+  mine: boolean;
+  /** This person may rate it and change its paragraph (its teacher, the lead, or an administrator who took the report over). */
+  canEdit: boolean;
+  paragraph: string;
+  /** When its teacher sent it to the lead. */
+  done: { by: string | null; at: string } | null;
 };
 
 export type ReportData = {
   reviewId: number;
+  /** The full name, for the cover. */
   childName: string;
+  /** What the report calls the child everywhere else ("Nur Aisyah"). */
+  firstName: string;
   chineseName: string;
   childInitial: string;
   className: string;
   dateOfBirth: string;
   season: string;
   year: number;
-  /** The photo chosen for the cover, else null. */
-  coverPhotoId: number | null;
+  /** The cover photo's URL: the child's profile photo (or, on a report approved before profile photos, the cover it was approved with), else null. */
+  coverPhoto: string | null;
   /** Every other photo the report may show: the learning pages' own, and older ones that belong to no area. */
   photoIds: number[];
   areas: {
@@ -200,6 +256,8 @@ export type ReportData = {
     name: string;
     subName: string | null;
     icon: string | null;
+    /** "zh": the area's paragraph is written in Chinese, so its headings are too. */
+    language: AreaLanguage;
     summary: Level | null;
     /** Statements with the child's name filled in. Families see marks and words, never the numbers. */
     skills: { key: string; text: string; level: Level; up: boolean; /** The rating from the previous semester, when the same question was asked. */ previous: Level | null }[];
@@ -232,6 +290,22 @@ export type ReportView = {
   notes: string[];
   provider: string;
   workflow: Workflow;
+};
+
+/** One teacher's page of the report: how it will print, and their part of it to check and send to the lead. */
+export type PartPageView = {
+  reviewId: number;
+  childName: string;
+  areaKey: string;
+  areaName: string;
+  data: ReportData;
+  school: SchoolDetails;
+  part: PartView;
+  leadName: string | null;
+  /** Why it cannot be changed now (the report was sent for review, approved…), or null. */
+  locked: string | null;
+  /** Every statement in the area is rated or marked Not seen yet, so the page can be written. */
+  rated: boolean;
 };
 
 export type ApprovalStatusFilter = "waiting" | "changes" | "approved" | "not_submitted";
@@ -404,7 +478,11 @@ export type Timetable = { classId: number; days: { weekday: number; start: strin
 // ─── Subject timetable (CHANGES-TO-MAKE change 7) ───────────────────────────
 
 /** Soft colours a subject can take; the screens turn each into a tint with dark text. */
-export const SUBJECT_COLORS = ["sky", "rose", "sun", "leaf", "lilac", "peach", "stone"] as const;
+/** Each subject has its own colour: no two subjects share one. */
+export const SUBJECT_COLORS = [
+  "sky", "ocean", "indigo", "lilac", "plum", "berry", "blush", "rose", "red", "coral", "peach", "amber",
+  "sun", "lime", "olive", "leaf", "forest", "teal", "sand", "stone", "slate", "cocoa",
+] as const;
 export type SubjectColor = (typeof SUBJECT_COLORS)[number];
 
 export type Subject = {
@@ -445,8 +523,8 @@ export type TimetableView = {
   teachers: (StaffRef & { subjectIds: number[] | null })[];
   /** The administrator edits everything; a subject teacher edits the lessons of their own subject in this class. */
   editable: "all" | { subjectIds: number[] } | null;
-  /** The classes this person can see a timetable for. */
-  classes: { id: number; name: string }[];
+  /** The classes this person can see a timetable for, with their level so the picker can go level first. */
+  classes: { id: number; name: string; level: ClassLevel }[];
 };
 
 export type SubjectsView = { subjects: Subject[]; inUse: Record<number, number> };
@@ -460,6 +538,8 @@ export type CalendarView = {
   /** Weeks in range where a class does not follow its normal timetable. */
   changedWeeks: { classId: number; weekOf: string }[];
   subjects: Subject[];
+  /** The teachers named on these lessons, so each lesson shows who teaches it. */
+  teachers: StaffRef[];
   /** The classes this person can see, for names, colours and the filter. */
   classes: { id: number; name: string; level: ClassLevel }[];
   /** Today in Singapore, YYYY-MM-DD. */
@@ -467,3 +547,6 @@ export type CalendarView = {
 };
 
 export type CalendarLink = { path: string };
+
+/** Where a child's profile photo is served; `at` (when it last changed) makes a new photo a new URL. */
+export const childPhotoUrl = (childId: number, at: string | Date | null | undefined) => (at ? `/api/children/${childId}/photo?v=${new Date(at).getTime()}` : null);

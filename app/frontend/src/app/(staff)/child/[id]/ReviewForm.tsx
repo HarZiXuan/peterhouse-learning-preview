@@ -9,6 +9,7 @@ import type { AreaAnswer, Level, ReviewPhoto, ReviewView } from "@peterhouse/sha
 import { COVER_PHOTO_KEY, LOVE_MAX, NOTE_MAX, SCALE, areaProgress, fillTemplate } from "@peterhouse/shared";
 import { Icon } from "@/components/icons";
 import { timeAgo } from "@/components/ui";
+import { ChildPhoto } from "@/components/ChildPhoto";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -108,11 +109,24 @@ export function ReviewForm({ view }: { view: ReviewView }) {
   const { reviewId, childName, rubric, pronoun } = view;
   // A submitted, approved or taken-over report cannot be changed here; say why instead (at most every few seconds).
   const locked = view.workflow.locked;
-  // A subject teacher rates the children and adds photos; the class's teachers write the report.
-  const mine = view.subjectOnly;
+  // The report comes in parts: each teacher rates their own areas and sends their paragraph to the lead teacher, who
+  // writes the whole report and sends it for review. The lead may change any area.
+  const canWrite = view.canWriteReport;
+  const lead = view.leadName ?? "the lead teacher";
+  const partWhy = (areaKey: string) => {
+    const part = view.parts[areaKey];
+    if (!part) return null;
+    const name = rubric.areas.find((a) => a.key === areaKey)?.name ?? "this area";
+    if (!part.canEdit)
+      return canWrite && part.owner && !part.done
+        ? `${part.owner.name} is still working on ${name}. You can see their ratings; you can change them once they send it to you.`
+        : `${part.owner?.name ?? "Another teacher"} rates ${name} for this class.`;
+    if (part.done && !view.isLead && !canWrite) return `You sent ${name} to ${lead}. Take it back to change it.`;
+    return null;
+  };
   const nudged = useRef(false);
   const blocked = (areaKey?: string) => {
-    const why = locked ?? (mine && !areaKey ? "You rate this class’s children. Its class teachers write the report." : null);
+    const why = locked ?? (areaKey ? partWhy(areaKey) : !canWrite ? `${lead} writes the whole report.` : null);
     if (!why) return false;
     if (!nudged.current) {
       toast.info(why);
@@ -124,9 +138,10 @@ export function ReviewForm({ view }: { view: ReviewView }) {
   const latest = useRef(view.answers);
   const [answers, setAnswers] = useState(view.answers);
   const [area, setArea] = useState(() => {
-    // Start on the first domain with something left to rate.
-    const i = rubric.areas.findIndex((a) => areaProgress(a, view.answers[a.key]).todo > 0);
-    return i < 0 ? 0 : i;
+    // Start on the first of this person's areas with something left to rate (any area for the lead).
+    const mineFirst = rubric.areas.findIndex((a) => view.parts[a.key]?.mine && areaProgress(a, view.answers[a.key]).todo > 0);
+    const i = mineFirst >= 0 ? mineFirst : rubric.areas.findIndex((a) => (canWrite || view.parts[a.key]?.mine) && areaProgress(a, view.answers[a.key]).todo > 0);
+    return i < 0 ? Math.max(0, rubric.areas.findIndex((a) => view.parts[a.key]?.mine)) : i;
   });
   const [photos, setPhotos] = useState<ReviewPhoto[]>(view.photos);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -141,11 +156,16 @@ export function ReviewForm({ view }: { view: ReviewView }) {
 
   const fill = (t: string) => fillTemplate(t, childName, pronoun);
   const progress = rubric.areas.map((a) => areaProgress(a, answers[a.key]));
-  const total = progress.reduce((n, p) => n + p.total, 0);
-  const answered = progress.reduce((n, p) => n + p.rated + p.notSeen, 0);
+  // The lead sees every area; another teacher sees only the areas they rate.
+  const shown = rubric.areas.map((_, i) => i).filter((i) => canWrite || view.parts[rubric.areas[i].key]?.mine);
+  const total = shown.reduce((n, i) => n + progress[i].total, 0);
+  const answered = shown.reduce((n, i) => n + progress[i].rated + progress[i].notSeen, 0);
   const ready = answered === total;
   const current = rubric.areas[area];
   const ans = answers[current.key];
+  const myAreas = rubric.areas.filter((a) => view.parts[a.key]?.mine).map((a) => a.name);
+  const part = view.parts[current.key];
+  const readOnly = !!locked || !!partWhy(current.key);
 
   const queueSave = (areaKey: string, next: AreaAnswer, delay: number) => {
     if (blocked(areaKey)) return;
@@ -249,11 +269,14 @@ export function ReviewForm({ view }: { view: ReviewView }) {
     fileInput.current?.click();
   };
   const areaPhotos = photos.filter((p) => p.areaKey === current.key);
-  const coverPhoto = photos.find((p) => p.areaKey === COVER_PHOTO_KEY);
   const olderPhotos = photos.filter((p) => !p.areaKey || (p.areaKey !== COVER_PHOTO_KEY && !rubric.areas.some((a) => a.key === p.areaKey)));
   const note = ans.note ?? "";
-  const isLast = area === rubric.areas.length - 1;
-  const firstGap = rubric.areas.findIndex((_, i) => progress[i].todo > 0);
+  const at = shown.indexOf(area);
+  const prevArea = at > 0 ? shown[at - 1] : null;
+  const nextArea = at >= 0 && at < shown.length - 1 ? shown[at + 1] : null;
+  const isLast = nextArea === null;
+  // The next area still to rate: for the lead any area, for another teacher only their own.
+  const firstGap = rubric.areas.findIndex((a, i) => progress[i].todo > 0 && (canWrite || view.parts[a.key]?.mine));
   const savedLine = saved.s === "saving" ? "Saving…" : saved.s === "error" ? "Could not save. Check your connection." : `Saved ${timeAgo(saved.at)}`;
 
   return (
@@ -279,15 +302,31 @@ export function ReviewForm({ view }: { view: ReviewView }) {
               </Link>
             </Button>
           )}
-          <Button type="button" disabled={!ready || writing || !!locked || !!mine} onClick={write} title={ready ? undefined : "Rate every statement, or mark it Not seen yet, first"}>
-            <Icon name="write" size={16} /> {view.hasReport ? "Write again" : "Write report"}
-          </Button>
+          {canWrite && (
+            <Button
+              type="button"
+              disabled={!ready || writing || !!locked || view.waitingFor.length > 0}
+              onClick={write}
+              title={view.waitingFor.length ? "Every teacher sends their part first" : ready ? undefined : "Rate every statement, or mark it Not seen yet, first"}
+            >
+              <Icon name="write" size={16} /> {view.hasReport ? "Write again" : "Write report"}
+            </Button>
+          )}
         </div>
       </header>
-      {mine && !locked && (
+      {!canWrite && !locked && (
         <Alert className="mb-4">
           <AlertDescription>
-            You teach a subject in this class, so you can rate its children and add photos. The class teachers write the report.
+            {myAreas.length
+              ? `You rate ${myAreas.join(" and ")} for this class. Rate it, check the paragraph the AI writes, then send it to ${lead}. ${lead} writes the whole report.`
+              : `You don’t rate any area for this class. ${lead} and the other teachers write this child’s report.`}
+          </AlertDescription>
+        </Alert>
+      )}
+      {canWrite && !locked && view.waitingFor.length > 0 && (
+        <Alert className="mb-4">
+          <AlertDescription>
+            Waiting for {view.waitingFor.map((w) => `${w.teacher} (${w.area})`).join(", ")} to send their part. Meanwhile you can rate your own areas.
           </AlertDescription>
         </Alert>
       )}
@@ -311,8 +350,11 @@ export function ReviewForm({ view }: { view: ReviewView }) {
         </Alert>
       )}
 
+      {shown.length > 0 && (
+      <>
       <div role="tablist" aria-label="Learning areas" className="mb-5 flex gap-1 overflow-x-auto border-b">
         {rubric.areas.map((a, i) => {
+          if (!shown.includes(i)) return null;
           const p = progress[i];
           const done = p.todo === 0;
           return (
@@ -328,14 +370,18 @@ export function ReviewForm({ view }: { view: ReviewView }) {
                 <Icon name={a.icon ?? a.key} size={16} />
                 {a.shortName}
               </span>
-              <span className="text-xs">{done ? `All ${p.total} done` : `${p.total - p.todo} of ${p.total}`}</span>
+              <span className="text-xs">
+                {view.parts[a.key]?.done ? "Sent ✓ · " : ""}
+                {done ? `All ${p.total} done` : `${p.total - p.todo} of ${p.total}`}
+                {view.parts[a.key]?.owner && !view.parts[a.key].mine ? ` · ${view.parts[a.key].owner!.name}` : ""}
+              </span>
             </button>
           );
         })}
       </div>
 
       <div className="form-cols">
-        <section className={cn("area-card", locked && "[&_.ladder]:opacity-60 [&_textarea]:opacity-60")} aria-labelledby="area-title" role="tabpanel">
+        <section className={cn("area-card", readOnly && "[&_.ladder]:opacity-60 [&_[role=radiogroup]]:opacity-60 [&_textarea]:opacity-60")} aria-labelledby="area-title" role="tabpanel">
           <div className="mb-2 flex items-start gap-3">
             <span className="mt-1 text-primary">
               <Icon name={current.icon ?? current.key} size={24} />
@@ -344,7 +390,10 @@ export function ReviewForm({ view }: { view: ReviewView }) {
               <h2 id="area-title" className="text-2xl font-bold">
                 {current.name} {current.subName && <span className="han">{current.subName}</span>}
               </h2>
-              <p className="text-sm text-muted-foreground">Tap the box that fits best. 1 is still learning, 5 really shines.</p>
+              <p className="text-sm text-muted-foreground">
+                {readOnly && !locked ? partWhy(current.key) : "Tap the box that fits best. 1 is still learning, 5 really shines."}
+                {part?.owner && !part.mine && part.done && !readOnly && <> {part.owner.name} sent this to you; as the lead you can still change it.</>}
+              </p>
             </div>
           </div>
 
@@ -471,16 +520,48 @@ export function ReviewForm({ view }: { view: ReviewView }) {
             </div>
           </div>
 
+          {part?.mine && !canWrite && (
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-secondary/40 p-4">
+              <div className="grid gap-0.5">
+                <h3 className="font-heading text-lg font-semibold">Your {current.name} page</h3>
+                <p className="text-sm text-muted-foreground">
+                  {part.done
+                    ? `Approved and sent to ${lead}.`
+                    : part.paragraph
+                      ? `Written. Check the page and send it to ${lead}.`
+                      : progress[area].todo === 0
+                        ? "All rated. The AI writes your page of the report for you to check."
+                        : "Rate every statement first; then the AI writes your page of the report."}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant={part.done ? "outline" : "default"}
+                disabled={progress[area].todo > 0 && !part.paragraph}
+                onClick={async () => {
+                  await flush();
+                  router.push(`/child/${reviewId}/part/${current.key}`);
+                }}
+              >
+                <Icon name={part.paragraph ? "reports" : "write"} size={16} /> {part.paragraph || part.done ? "Open my page" : "Write my page"}
+              </Button>
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-3 pt-5">
-            <Button type="button" variant="outline" onClick={() => goTo(area - 1)} disabled={area === 0}>
+            <Button type="button" variant="outline" onClick={() => prevArea !== null && goTo(prevArea)} disabled={prevArea === null}>
               <Icon name="left" size={16} stroke={2} />
-              {area === 0 ? "Previous" : rubric.areas[area - 1].shortName}
+              {prevArea === null ? "Previous" : rubric.areas[prevArea].shortName}
             </Button>
             {isLast ? (
-              ready ? (
-                <Button type="button" onClick={write} disabled={writing || !!locked || !!mine}>
-                  <Icon name="write" size={16} /> {view.hasReport ? "Write again" : "Write report"}
-                </Button>
+              firstGap < 0 ? (
+                canWrite ? (
+                  <Button type="button" onClick={write} disabled={writing || !!locked || view.waitingFor.length > 0}>
+                    <Icon name="write" size={16} /> {view.hasReport ? "Write again" : "Write report"}
+                  </Button>
+                ) : (
+                  <span />
+                )
               ) : (
                 <Button type="button" variant="secondary" onClick={() => goTo(firstGap)}>
                   Still to rate: {rubric.areas[firstGap].shortName}
@@ -488,8 +569,8 @@ export function ReviewForm({ view }: { view: ReviewView }) {
                 </Button>
               )
             ) : (
-              <Button type="button" onClick={() => goTo(area + 1)}>
-                Next: {rubric.areas[area + 1].shortName}
+              <Button type="button" onClick={() => nextArea !== null && goTo(nextArea)}>
+                Next: {rubric.areas[nextArea!].shortName}
                 <Icon name="right" size={16} stroke={2} />
               </Button>
             )}
@@ -506,7 +587,7 @@ export function ReviewForm({ view }: { view: ReviewView }) {
             </div>
             <Progress value={(100 * answered) / Math.max(1, total)} aria-hidden className="mt-2" />
             <ul className="glance-list">
-              {rubric.areas.map((a, i) => (
+              {rubric.areas.map((a, i) => !shown.includes(i) ? null : (
                 <li key={a.key}>
                   <button type="button" aria-current={i === area} onClick={() => goTo(i)}>
                     <Icon name={a.icon ?? a.key} size={18} />
@@ -537,30 +618,11 @@ export function ReviewForm({ view }: { view: ReviewView }) {
             </div>
           </div>
           <div className="glance-card">
-            <h2>Cover photo</h2>
+            <h2>Profile photo</h2>
             <p className="small muted" style={{ margin: "4px 0 10px" }}>
-              The big photo inside the rainbow on the front of the report.
+              {childName}’s photo across the app, and the big photo on the front of the report. The office sees and can change the same one.
             </p>
-            <div className="photos-row">
-              {coverPhoto ? (
-                <div className="ph">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/api/photos/${coverPhoto.id}`} alt={`${childName} cover photo`} />
-                  <button type="button" aria-label="Remove the cover photo" onClick={() => removePhoto(coverPhoto.id)}>
-                    ×
-                  </button>
-                </div>
-              ) : (
-                <button type="button" className="ph-add" aria-label="Add a cover photo" disabled={uploading !== null} onClick={() => pickFor(COVER_PHOTO_KEY)}>
-                  <Icon name={uploading === COVER_PHOTO_KEY ? "photo" : "plus"} size={22} />
-                </button>
-              )}
-            </div>
-            {coverPhoto && (
-              <button type="button" className="small" style={{ marginTop: 8, textDecoration: "underline", background: "none", border: 0, padding: 0 }} disabled={uploading !== null} onClick={() => pickFor(COVER_PHOTO_KEY)}>
-                Choose a different photo
-              </button>
-            )}
+            <ChildPhoto childId={view.childId} photo={view.photo} name={childName} size={72} />
           </div>
           <div className="tip">
             <Icon name="info" size={18} />
@@ -587,6 +649,8 @@ export function ReviewForm({ view }: { view: ReviewView }) {
           )}
         </aside>
       </div>
+      </>
+      )}
     </div>
   );
 }

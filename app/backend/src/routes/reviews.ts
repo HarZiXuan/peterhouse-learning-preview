@@ -1,14 +1,15 @@
 import express, { Router } from "express";
 import { z } from "zod";
-import type { AreaAnswer, ReportSection, ReportView, ReviewView } from "@peterhouse/shared";
-import { COVER_PHOTO_KEY, PHOTOS_PER_AREA, semesterLabel } from "@peterhouse/shared";
+import type { AreaAnswer, PartPageView, ReportSection, ReportView, ReviewView } from "@peterhouse/shared";
+import { COVER_PHOTO_KEY, PHOTOS_PER_AREA, areaProgress, childPhotoUrl, semesterLabel } from "@peterhouse/shared";
 import { audit } from "../audit";
 import { createSession, currentUser, destroySession } from "../auth";
 import { HttpError, idParam, parse } from "../http";
-import { buildReportData, editParagraph, getReviewForEdit, isSubjectOnly, getReviewForUser, loadAnswers, openReview, refreshReviewStatus, rewriteParagraph, saveArea, setChineseName, writeDraft } from "../domain/reviews";
+import { buildReportData, editParagraph, getReviewForEdit, getReviewForUser, loadAnswers, lockReason, openReview, refreshReviewStatus, reopenPart, rewriteParagraph, saveArea, savePartText, sendPart, setChineseName, writeDraft, writePart } from "../domain/reviews";
+import { isLead, leadName, partsView, waitingParts } from "../domain/parts";
 import { submitForReview, takeBack, workflowFor } from "../domain/approval";
 import { one } from "../db";
-import { addPhoto, deletePhoto, listPhotos, photoReviewId, photoView, readPhoto } from "../domain/photos";
+import { addPhoto, canSeeChild, clearChildPhoto, deletePhoto, listPhotos, photoReviewId, photoView, readChildPhoto, readPhoto, setChildPhoto } from "../domain/photos";
 import { renderReportPdf } from "../domain/pdf";
 import { getSchool } from "../domain/school";
 
@@ -29,6 +30,8 @@ reviewsRouter.get("/reviews/:id", async (req, res) => {
   const { answers } = await loadAnswers(r.id, r.rubric);
   const view: ReviewView = {
     reviewId: r.id,
+    childId: r.child_id,
+    photo: childPhotoUrl(r.child_id, r.photo_at),
     childName: r.legal_name,
     chineseName: r.chinese_name,
     pronoun: r.pronoun,
@@ -41,7 +44,11 @@ reviewsRouter.get("/reviews/:id", async (req, res) => {
     semester: `${semesterLabel(r.season)} ${r.year}`,
     updatedAt: r.updated_at,
     workflow: await workflowFor(user, r),
-    subjectOnly: await isSubjectOnly(user, r),
+    isLead: await isLead(user, r.class_id),
+    canWriteReport: user.role === "admin" ? !!r.taken_over_by : await isLead(user, r.class_id),
+    leadName: await leadName(r.class_id),
+    parts: await partsView(user, r, r.rubric.areas.map((a) => a.key)),
+    waitingFor: await waitingParts(r, r.rubric.areas, (await isLead(user, r.class_id)) ? user.id : null),
   };
   await audit(req, user.id, "review.viewed", { reviewId: r.id, childId: r.child_id });
   res.json(view);
@@ -108,8 +115,67 @@ reviewsRouter.put("/reviews/:id/paragraphs/:key", async (req, res) => {
 });
 
 reviewsRouter.post("/reviews/:id/paragraphs/:key/rewrite", async (req, res) => {
-  const { tone } = parse(z.object({ tone: z.enum(["Shorter", "Warmer", "Simpler"]).optional() }), req.body ?? {});
-  res.json(await rewriteParagraph(currentUser(req), idParam(req.params.id), req.params.key, tone));
+  const { tone, request } = parse(z.object({ tone: z.enum(["Shorter", "Warmer", "Simpler"]).optional(), request: z.string().max(500).optional() }), req.body ?? {});
+  res.json(await rewriteParagraph(currentUser(req), idParam(req.params.id), req.params.key, tone, request));
+});
+
+// A teacher's part: the areas they rate, their paragraph, and sending it to the lead teacher.
+reviewsRouter.get("/reviews/:id/parts/:area", async (req, res) => {
+  const user = currentUser(req);
+  const r = await openReview(await getReviewForUser(user, idParam(req.params.id)));
+  const area = r.rubric.areas.find((a) => a.key === req.params.area);
+  if (!area) throw new HttpError(404, "Not found.");
+  const { answers } = await loadAnswers(r.id, r.rubric);
+  const part = (await partsView(user, r, [area.key]))[area.key];
+  const data = await buildReportData(r);
+  // The page shows the teacher's own paragraph, before the lead puts the report together.
+  data.areas = data.areas.map((a) => (a.key === area.key ? { ...a, paragraph: part.paragraph } : a));
+  const view: PartPageView = {
+    reviewId: r.id,
+    childName: r.legal_name,
+    areaKey: area.key,
+    areaName: area.name,
+    data,
+    school: await getSchool(),
+    part,
+    leadName: await leadName(r.class_id),
+    locked: lockReason(user, r),
+    rated: areaProgress(area, answers[area.key]).todo === 0,
+  };
+  res.json(view);
+});
+
+reviewsRouter.post("/reviews/:id/parts/:area/write", async (req, res) => {
+  const user = currentUser(req);
+  const id = idParam(req.params.id);
+  const { request } = parse(z.object({ request: z.string().max(500).optional() }), req.body ?? {});
+  const out = await writePart(user, id, req.params.area, request);
+  if (out.ok) await audit(req, user.id, "part.written", { reviewId: id, detail: req.params.area });
+  res.json(out);
+});
+
+reviewsRouter.put("/reviews/:id/parts/:area", async (req, res) => {
+  const user = currentUser(req);
+  const id = idParam(req.params.id);
+  const { text } = parse(z.object({ text: z.string().max(3000) }), req.body);
+  await savePartText(user, id, req.params.area, text);
+  res.json({ ok: true });
+});
+
+reviewsRouter.post("/reviews/:id/parts/:area/send", async (req, res) => {
+  const user = currentUser(req);
+  const id = idParam(req.params.id);
+  await sendPart(user, id, req.params.area);
+  await audit(req, user.id, "part.sent", { reviewId: id, detail: req.params.area });
+  res.json({ ok: true });
+});
+
+reviewsRouter.post("/reviews/:id/parts/:area/reopen", async (req, res) => {
+  const user = currentUser(req);
+  const id = idParam(req.params.id);
+  await reopenPart(user, id, req.params.area);
+  await audit(req, user.id, "part.reopened", { reviewId: id, detail: req.params.area });
+  res.json({ ok: true });
 });
 
 reviewsRouter.get("/reviews/:id/pdf", async (req, res) => {
@@ -160,6 +226,36 @@ reviewsRouter.get("/photos/:photoId", async (req, res) => {
   if (!bytes) throw new HttpError(404, "Not found.");
   res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=3600" });
   res.send(bytes);
+});
+
+// A child's profile photo: the administrator and the child's teachers all see and change the same one.
+reviewsRouter.get("/children/:childId/photo", async (req, res) => {
+  const childId = idParam(req.params.childId);
+  if (!(await canSeeChild(currentUser(req), childId))) throw new HttpError(404, "Not found.");
+  const bytes = await readChildPhoto(childId);
+  if (!bytes) throw new HttpError(404, "Not found.");
+  // The URL carries the photo's version, so it can be cached until the photo changes.
+  res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400" });
+  res.send(bytes);
+});
+
+reviewsRouter.put("/children/:childId/photo", express.raw({ type: "image/*", limit: "25mb" }), async (req, res) => {
+  const user = currentUser(req);
+  const childId = idParam(req.params.childId);
+  if (!(await canSeeChild(user, childId))) throw new HttpError(404, "Not found.");
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new HttpError(400, "No photo was sent.");
+  const at = await setChildPhoto(childId, req.body);
+  await audit(req, user.id, "child.photo_changed", { childId });
+  res.json({ photo: childPhotoUrl(childId, at) });
+});
+
+reviewsRouter.delete("/children/:childId/photo", async (req, res) => {
+  const user = currentUser(req);
+  const childId = idParam(req.params.childId);
+  if (!(await canSeeChild(user, childId))) throw new HttpError(404, "Not found.");
+  await clearChildPhoto(childId);
+  await audit(req, user.id, "child.photo_removed", { childId });
+  res.json({ photo: null });
 });
 
 reviewsRouter.delete("/reviews/:id/photos/:photoId", async (req, res) => {

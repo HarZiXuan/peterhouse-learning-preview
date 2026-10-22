@@ -47,7 +47,9 @@ function ScoreRing({ levels, name }: { levels: number[]; name: string }) {
   );
 }
 
-function Sheet({ children, footer, draft, className = "", sheetKey }: { children: React.ReactNode; footer: React.ReactNode; draft: boolean; className?: string; sheetKey?: string }) {
+function Sheet({ children, footer, draft, className = "", sheetKey, only }: { children: React.ReactNode; footer: React.ReactNode; draft: boolean; className?: string; sheetKey?: string; only?: string }) {
+  // One page on its own (a teacher checking their part): the other pages are left out.
+  if (only && sheetKey !== only) return null;
   return (
     <section className={`${styles.sheet} ${className}`} data-sheet={sheetKey}>
       {draft && (
@@ -116,6 +118,7 @@ export function Report({
   edits,
   active,
   onPick,
+  only,
 }: {
   data: ReportData;
   school: SchoolDetails;
@@ -125,6 +128,8 @@ export function Report({
   edits?: Record<string, string>;
   active?: string;
   onPick?: (key: string) => void;
+  /** Show only this page ("area:mat"), e.g. for the teacher who writes it. */
+  only?: string;
 }) {
   const pick: Pick = { active, onPick };
   const T = (key: string, original: string) => edits?.[key] ?? original;
@@ -133,8 +138,8 @@ export function Report({
 
   // Photo plan: the cover photo is chosen on its own; each area shows its own photo; older photos that belong to no area
   // fill areas without one, then up to two go to the closing page.
-  const coverPhoto = data.coverPhotoId;
-  const used = new Set<number>(coverPhoto ? [coverPhoto] : []);
+  const coverPhoto = data.coverPhoto;
+  const used = new Set<number>();
   const areaPhoto = new Map<number, number>();
   data.areas.forEach((a, i) => {
     const own = a.photoIds.find((id) => !used.has(id));
@@ -171,7 +176,7 @@ export function Report({
   return (
     <div className={styles.report}>
       {/* ── 1 · Cover ── */}
-      <Sheet draft={isDraft} footer={footer(1)} className={`${styles.cover} ${styles.tone_sun}`} sheetKey="opening">
+      <Sheet only={only} draft={isDraft} footer={footer(1)} className={`${styles.cover} ${styles.tone_sun}`} sheetKey="opening">
         <svg className={styles.decor} viewBox="0 0 794 1123" aria-hidden>
           <path d="M60 250c0-18 14-30 32-30 6-16 24-26 42-22 10-14 34-16 46-2 20-4 38 10 38 28 0 14-12 26-28 26H92c-18 0-32-1-32 0z" fill="#e4f2fb" />
           <path d="M560 330c0-14 12-24 26-24 6-12 20-20 34-16 8-10 26-12 36-2 16-2 30 8 30 22 0 12-10 20-22 20H588c-16 0-28 0-28 0z" fill="#e4f2fb" />
@@ -207,7 +212,12 @@ export function Report({
           <i className={styles.a2} />
           <i className={styles.a3} />
           <i className={styles.a4} />
-          <div className={styles.archIn}>{coverPhoto ? <Photo id={coverPhoto} /> : <span aria-hidden>{data.childInitial}</span>}</div>
+          <div className={styles.archIn}>{coverPhoto ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={coverPhoto} alt="" />
+          ) : (
+            <span aria-hidden>{data.childInitial}</span>
+          )}</div>
         </div>
         <div className={styles.ground} />
 
@@ -230,7 +240,7 @@ export function Report({
         const picture = a.icon ?? a.key;
         const loveLong = (a.love?.answer.length ?? 0) > 70;
         return (
-          <Sheet key={a.key} draft={isDraft} footer={footer(idx + 2)} className={styles[`tone_${tone}`]} sheetKey={`area:${a.key}`}>
+          <Sheet only={only} key={a.key} draft={isDraft} footer={footer(idx + 2)} className={styles[`tone_${tone}`]} sheetKey={`area:${a.key}`}>
             <div className={styles.band}>
               <svg className={styles.wave} viewBox="0 0 794 262" preserveAspectRatio="none" aria-hidden>
                 <path d="M0 0H794V212C730 246 650 190 560 218C470 246 390 192 300 216C210 240 110 198 0 224Z" />
@@ -263,16 +273,16 @@ export function Report({
                   </div>
                 )}
               </div>
-              <section className={styles.skillsBox} aria-label={`How ${data.childName} is doing in ${a.name}`}>
-                <h2>{data.childName} in {a.name}</h2>
-                <ScoreRing levels={a.skills.map((s) => s.level)} name={data.childName} />
+              <section className={styles.skillsBox} aria-label={`How ${data.firstName} is doing in ${a.name}`}>
+                <h2>{a.language === "zh" ? `${data.firstName}的${a.subName ?? a.name}` : `${data.firstName} in ${a.name}`}</h2>
+                <ScoreRing levels={a.skills.map((s) => s.level)} name={data.firstName} />
               </section>
             </div>
 
             <FitNote className={`${styles.note} ${styles.lined} ${fit(story.length, 520, 760)}`} text={story}>
               <div className={styles.noteHead}>
                 <Pencil />
-                <h2>A note from {data.childName}’s teachers</h2>
+                <h2>{a.language === "zh" ? "老师的话" : `A note from ${data.firstName}’s teachers`}</h2>
               </div>
               <Paragraph text={story} k={`area:${a.key}`} pick={pick} />
             </FitNote>
@@ -281,7 +291,7 @@ export function Report({
       })}
 
       {/* ── Last · Looking ahead ── */}
-      <Sheet draft={isDraft} footer={footer(pageCount)} sheetKey="closing">
+      <Sheet only={only} draft={isDraft} footer={footer(pageCount)} sheetKey="closing">
         <div className={styles.cband}>
           <svg className={styles.scene} viewBox="0 0 794 250" preserveAspectRatio="none" aria-hidden>
             <path d="M0 0H794V204C720 238 640 188 548 216C456 244 380 196 290 220C200 244 100 206 0 230Z" fill="#c7e9fa" />
@@ -294,7 +304,7 @@ export function Report({
               Looking ahead
             </span>
             <h1 className={styles.cTitle}>
-              {data.childName}’s next <em>chapter</em>
+              {data.firstName}’s next <em>chapter</em>
             </h1>
           </div>
           {closingPhotos.length > 0 ? (

@@ -2,7 +2,8 @@ import sharp from "sharp";
 import { decryptBytes, encryptBytes } from "../crypto";
 import { many, one, run } from "../db";
 import { HttpError } from "../http";
-import { COVER_PHOTO_KEY, PHOTOS_PER_AREA } from "@peterhouse/shared";
+import { COVER_PHOTO_KEY, PHOTOS_PER_AREA, type SessionUser } from "@peterhouse/shared";
+import { canAccessClass } from "./reviews";
 
 export type ReviewPhoto = { id: number; position: number; area_key: string | null };
 
@@ -16,18 +17,22 @@ export async function reportPhotoIds(reviewId: number): Promise<number[]> {
   return (await listPhotos(reviewId)).map((p) => p.id);
 }
 
+/** Rotated upright, at most 1600px, metadata stripped, as JPEG. */
+async function cleanImage(input: Buffer): Promise<Buffer> {
+  try {
+    return await sharp(input).rotate().resize(1600, 1600, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 84 }).toBuffer();
+  } catch {
+    throw new HttpError(400, "That file is not a photo we can read. Use a JPG or PNG.");
+  }
+}
+
 /**
  * Re-encodes the upload (rotated upright, max 1600px, metadata stripped), encrypts it, and stores it in the database.
  * The report has room for one photo on each learning page and one on the cover (`areaKey` is the area's key or "cover"),
  * so a new photo takes the place of the one that was there.
  */
 export async function addPhoto(reviewId: number, areaKey: string, input: Buffer): Promise<ReviewPhoto> {
-  let out: Buffer;
-  try {
-    out = await sharp(input).rotate().resize(1600, 1600, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 84 }).toBuffer();
-  } catch {
-    throw new HttpError(400, "That file is not a photo we can read. Use a JPG or PNG.");
-  }
+  const out = await cleanImage(input);
   const row = await one<ReviewPhoto>(
     `INSERT INTO review_photos (review_id, data, position, area_key)
      VALUES ($1, $2, (SELECT COALESCE(MAX(position), -1) + 1 FROM review_photos WHERE review_id = $1), $3) RETURNING id, position, area_key`,
@@ -49,3 +54,29 @@ export async function readPhoto(photoId: number): Promise<Buffer | null> {
 }
 
 export const deletePhoto = (photoId: number) => run("DELETE FROM review_photos WHERE id = $1", [photoId]);
+
+// ─── A child's profile photo ─────────────────────────────────────────────
+// One per child, kept across semesters, encrypted like every other photo. It is the cover of the child's report.
+
+/** Administrators see every child; a teacher sees the children of a class they teach this semester or taught before. */
+export async function canSeeChild(user: SessionUser, childId: number): Promise<boolean> {
+  if (user.role === "admin") return !!(await one("SELECT 1 FROM children WHERE id = $1", [childId]));
+  const classes = await many<{ class_id: number }>("SELECT DISTINCT class_id FROM reviews WHERE child_id = $1", [childId]);
+  for (const k of classes) if (await canAccessClass(user, k.class_id)) return true;
+  return false;
+}
+
+/** Stores the new photo and returns when it changed (part of its URL). */
+export async function setChildPhoto(childId: number, input: Buffer): Promise<string> {
+  const out = await cleanImage(input);
+  const row = await one<{ photo_at: string }>("UPDATE children SET photo = $1, photo_at = now() WHERE id = $2 RETURNING photo_at", [encryptBytes(out), childId]);
+  if (!row) throw new HttpError(404, "Not found.");
+  return row.photo_at;
+}
+
+export async function readChildPhoto(childId: number): Promise<Buffer | null> {
+  const row = await one<{ photo: Buffer | null }>("SELECT photo FROM children WHERE id = $1", [childId]);
+  return row?.photo ? decryptBytes(row.photo) : null;
+}
+
+export const clearChildPhoto = (childId: number) => run("UPDATE children SET photo = NULL, photo_at = NULL WHERE id = $1", [childId]);

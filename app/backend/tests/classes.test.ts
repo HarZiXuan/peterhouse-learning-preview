@@ -2,7 +2,7 @@
 // places children, teachers see only their own classes, and a new year moves every class up a level.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SessionUser } from "@peterhouse/shared";
-import { classCapacity, levelForBirthday, nameForNextLevel, nextLevel } from "@peterhouse/shared";
+import { levelForBirthday, nameForNextLevel, nextLevel } from "@peterhouse/shared";
 import { setupTestDb } from "./helpers";
 
 let t: Awaited<ReturnType<typeof setupTestDb>>;
@@ -42,10 +42,7 @@ describe("level from the birth year", () => {
     expect(levelForBirthday("", 2026)).toEqual({ problem: "no_birthday" });
   });
 
-  it("knows the teacher ratios and the next level", () => {
-    expect(classCapacity("K1", 1)).toBe(12);
-    expect(classCapacity("K1", 2)).toBe(24);
-    expect(classCapacity("PG", 0)).toBe(6);
+  it("knows the next level", () => {
     expect(nextLevel("N2")).toBe("K1");
     expect(nextLevel("K2")).toBeNull();
     expect(nameForNextLevel("K1 Sunflower", "K1", "K2")).toBe("K2 Sunflower");
@@ -83,7 +80,7 @@ describe("the administrator manages classes", () => {
     expect((await C.classesFor(admin)).map((k) => k.name)).toEqual(["PG Little Stars", "N2 Rainbow", "K1 Sunflower"]);
 
     const detail = await C.classDetail(k1);
-    expect(detail).toMatchObject({ level: "K1", birthYear: year - 5, lead: { id: lim.id }, children: 1, capacity: 12 });
+    expect(detail).toMatchObject({ level: "K1", birthYear: year - 5, lead: { id: lim.id }, children: 1 });
 
     // Moving works only between classes of the same level.
     await expect(C.moveChild(ava, k1)).rejects.toMatchObject({ status: 409, code: "wrong_level" });
@@ -120,7 +117,6 @@ describe("the administrator manages classes", () => {
     const d = await C.classDetail(k1.id);
     expect(d.lead).toMatchObject({ id: tan.id });
     expect(d.co.map((c) => c.id)).toEqual([lim.id]);
-    expect(d.capacity).toBe(24);
     await C.setClassStaff(k1.id, lim.id, []);
   });
 });

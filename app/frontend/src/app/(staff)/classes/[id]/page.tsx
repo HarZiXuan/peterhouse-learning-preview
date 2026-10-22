@@ -5,7 +5,7 @@ import { classLevel } from "@peterhouse/shared";
 import { apiGet } from "@/lib/api";
 import { AddChild } from "../../AddChild";
 import { NewClass } from "../NewClass";
-import { ClassChildren, ClassGlance, ClassTeachers, RemoveClass } from "./ClassManager";
+import { AreaTeachers, ClassChildren, ClassGlance, ClassTeachers, RemoveClass } from "./ClassManager";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +42,7 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
         <ClassChildren detail={k} classes={all.classes} className="lg:col-start-1 lg:row-start-1" />
         <aside aria-label="Teachers" className="lg:col-start-2 lg:row-start-1">
           <ClassTeachers detail={k} teachers={all.teachers} classes={all.classes} />
+          <AreaTeachers detail={k} />
         </aside>
       </div>
     </main>

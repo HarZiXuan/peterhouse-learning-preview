@@ -123,7 +123,7 @@ export function NewClass({
             </RadioGroup>
             <p className="text-sm text-muted-foreground">
               {lv.name}
-              {year ? ` · children born in ${year - lv.turns}` : ""} · {lv.ratio} places for each teacher
+              {year ? ` · children born in ${year - lv.turns}` : ""}
             </p>
             {locked && <p className="text-xs text-muted-foreground">The level can only change while the class has no children.</p>}
           </div>

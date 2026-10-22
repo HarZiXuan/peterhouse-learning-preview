@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import type { ReviewStatus, SessionUser } from "@peterhouse/shared";
+import { stageOf } from "@peterhouse/shared";
 import { initials } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icons";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -17,8 +18,11 @@ export type RailChild = {
   total: number;
   hasReport: boolean;
   status: ReviewStatus;
-  coverPhotoId: number | null;
   areas: { name: string; answered: number; total: number }[];
+  iAmLead: boolean;
+  myParts: { area: string; done: boolean }[];
+  partsOpen: boolean;
+  takenOver: boolean;
 };
 
 async function logout() {
@@ -113,8 +117,17 @@ export function ClassRail({
   const [collapsed, setCollapsed] = useCollapsed();
   const admin = user.role === "admin";
   const section = sectionOf(path);
+  // Reports the administrator sent back to this teacher, flagged on Reports in the menu.
+  const sentBack = admin ? 0 : kids.filter((k) => k.status === "changes_requested").length;
+  // A teacher's reports still to finish: not sent for review yet, or sent back with changes.
+  // The lead counts reports not yet sent for review; another teacher counts children whose part they still owe.
+  const stillToDo = admin ? 0 : kids.filter((k) => !k.takenOver && (k.iAmLead ? stageOf(k.status) === "not_done" || k.status === "changes_requested" : k.partsOpen && k.myParts.some((p) => !p.done))).length;
   // Teachers count the reports they have written; the administrator counts the reports they have approved.
-  const finished = admin ? kids.filter((k) => k.status === "approved").length : kids.filter((k) => k.hasReport).length;
+  // A teacher's own work: as lead, the report written; otherwise, every part of theirs sent to the lead.
+  const finished = admin ? kids.filter((k) => k.status === "approved").length : kids.filter((k) => k.takenOver || (k.iAmLead ? k.hasReport : !(k.partsOpen && k.myParts.some((p) => !p.done)))).length;
+  // Out of: for a teacher, every child; for the administrator, only the reports sent to them (waiting, sent back or
+  // approved). Reports teachers have not sent yet are not the administrator's to review.
+  const total = admin ? kids.filter((k) => stageOf(k.status) !== "not_done").length : kids.length;
   // A teacher's home is their own class; the administrator manages every class from Classes instead.
   // Teachers see their own reviews and finished reports; the administrator follows every report from Reports instead.
   const groups: Group[] = admin
@@ -141,8 +154,8 @@ export function ClassRail({
           label: "My class",
           items: [
             { key: "students", href: "/", label: "My classes", icon: "class" },
-            { key: "reports", href: "/reports", label: "Reports", icon: "reports" },
-            { key: "calendar", href: "/calendar", label: "Calendar", icon: "calendar" },
+            { key: "reports", href: sentBack > 0 ? "/reports?show=changes" : "/reports", label: "Children’s reports", icon: "reports", count: stillToDo },
+            { key: "calendar", href: "/calendar", label: "My calendar", icon: "calendar" },
           ],
         },
         { label: "Account", items: [{ key: "settings", href: "/settings", label: "Settings", icon: "settings" }] },
@@ -150,18 +163,18 @@ export function ClassRail({
   const items = groups.flatMap((g) => g.items);
   // The phone bar has room for six. The administrator reaches Teachers from Settings there.
   const phoneItems = items.filter((i) => i.key !== "teachers");
-  const togo = kids.length - finished;
+  const togo = total - finished;
   const doneHref = admin ? "/reports?status=approved" : "/reports?show=ready";
-  const progressTitle = admin ? "Review progress" : togo === 0 ? "All reports written" : "Report progress";
+  const progressTitle = admin ? "Review progress" : togo === 0 ? "All done" : "Report progress";
   const progressNote = admin
     ? waiting > 0
       ? `${waiting} ${waiting === 1 ? "report" : "reports"} to review`
       : togo === 0
-        ? "All approved"
+        ? "All sent reports approved"
         : "Nothing to review now"
     : togo === 0
       ? "See your reports"
-      : `${togo} ${togo === 1 ? "report" : "reports"} to write`;
+      : `${togo} ${togo === 1 ? "child" : "children"} still to do`;
   const progressHref = admin ? (waiting > 0 ? "/reports?status=waiting" : doneHref) : togo === 0 ? doneHref : "/reports";
 
   return (
@@ -197,7 +210,7 @@ export function ClassRail({
                   <Icon name={it.icon} size={19} />
                   {!collapsed && it.label}
                   {!!it.count && (
-                    <span className={cn("rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground", collapsed ? "absolute right-1 top-1 px-1.5 text-[10px] leading-4" : "ml-auto")} aria-label={`${it.count} waiting`}>
+                    <span className={cn("rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground", collapsed ? "absolute right-1 top-1 px-1.5 text-[10px] leading-4" : "ml-auto")} aria-label={`${it.count} ${admin ? "waiting for review" : it.count === 1 ? "report still to finish" : "reports still to finish"}`}>
                       {it.count}
                     </span>
                   )}
@@ -209,19 +222,19 @@ export function ClassRail({
 
         <span className="flex-1" />
 
-        {kids.length > 0 && (
+        {total > 0 && (
           <Link
             href={progressHref}
-            title={collapsed ? `${finished} of ${kids.length} reports ${admin ? "approved" : "written"}` : undefined}
+            title={collapsed ? `${finished} of ${total} ${admin ? "reports sent for review are approved" : "reports written"}` : undefined}
             className={cn("group mx-3 mb-3 flex items-center gap-3 rounded-xl border bg-card p-3 outline-none transition-colors hover:border-foreground/30 focus-visible:ring-[3px] focus-visible:ring-ring/50", collapsed && "mx-2 justify-center p-2")}
           >
             <span className="relative grid size-11 shrink-0 place-items-center">
               <svg viewBox="0 0 44 44" className="absolute inset-0 -rotate-90" aria-hidden>
                 <circle cx="22" cy="22" r="19" fill="none" stroke="var(--border)" strokeWidth="4" />
-                <circle cx="22" cy="22" r="19" fill="none" stroke="var(--primary)" strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(finished / kids.length) * 119.4} 119.4`} />
+                <circle cx="22" cy="22" r="19" fill="none" stroke="var(--primary)" strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(finished / total) * 119.4} 119.4`} />
               </svg>
               <span className="text-xs font-bold">
-                {finished}/{kids.length}
+                {finished}/{total}
               </span>
             </span>
             {!collapsed && (

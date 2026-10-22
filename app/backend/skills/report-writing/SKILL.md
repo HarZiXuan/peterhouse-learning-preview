@@ -31,6 +31,17 @@ Parents and grandparents, often not native English readers. They want to know: I
 - **Closing** (70–100 words): the strongest area and the area that needs the most work, both named plainly, what the family can do to help with the weaker one, and thanks. Two short paragraphs.
 - **Home ideas**: you choose them; the teacher does not. Exactly two short, practical things a family can do at home to help with what [Child] finds hardest right now: the lowest-scored statements, in the weakest area first. Each one names the skill it helps and says exactly what to do, in 5–10 minutes, with things every home has: "To help with Chinese words, name three things at dinner in Chinese each evening and ask [Child] to repeat them." Never suggest anything for a skill that is not seen yet.
 
+## Areas written in Chinese (华文)
+An area marked "(questions and paragraph in Chinese)" is written **entirely in Simplified Chinese**, as a Chinese teacher at a Singapore or Malaysian preschool writes it. Everything else in the review (opening, the other areas, closing, home ideas) stays in English.
+- The same five moves and the same honesty as every other area: where [Child] stands, what [Child] does well, what [Child] cannot do yet (said plainly), how [Child] goes about it, and what we, the teachers, will do next.
+- 180–280 Chinese characters, one paragraph. Short, plain sentences a parent can read easily. Use 华文 / 华语, 汉字, 汉语拼音, 笔画, 笔顺, 儿歌.
+- Refer to the child as [Child] (keep the brackets; the name is put back later) and as 他 or 她 from the pronoun. Other people are [Friend] or [Teacher].
+- Bold 3–5 key phrases with `**…**` exactly as in English, for example `**能听懂简单的华语指令**`, `**还不认得汉字**`.
+- Score 1: "还不能…", "仍需要老师在旁协助"; score 2: "在老师提醒下有时能…，但还不能独立做到". Never soften a low score into "正在慢慢适应" or "开始探索". Never use labels such as 落后, 差, 笨, 迟缓.
+- The teachers' suggestion comes last, worded naturally ("下学期，我们会…", "为了帮助他，我们会…", "接下来，我们会…"), aimed at the gaps you named.
+- No numbers or scores, no comparisons with other children (never 其他小朋友, 同龄).
+- In the English paragraphs, refer to this area by its English name ("Chinese") and describe its skills in English.
+
 ## Use every detail given
 Each area lists its statements with a score from 1 to 5, or "not seen yet". The score tells you how to speak; never say the number or the score in the text:
   - 1 Still learning: [Child] cannot do this yet, or only with an adult doing it alongside. Say so directly: "does not yet…", "still needs an adult to…", "finds … hard".
@@ -62,17 +73,17 @@ domain: Mathematics
 Good output:
 "[Child] is a **confident and curious learner** who shows **strong early number skills**. He is particularly good at **counting objects accurately** and **sorting things to find simple patterns**. He can also compare groups to say which has more or fewer, name basic shapes around him, and use counting to work out one more or one less. [Child] shows real **enthusiasm and confidence** in these activities, especially when counting and exploring patterns. Next term, we will offer more **hands-on activities** with numbers and shapes, and encourage him to **explain his thinking** in his own words."
 
-Low-scoring example:
+Low-scoring example (an area written in Chinese):
 ```
 pronoun: he
-domain: Chinese
-- listens to and follows simple instructions in Chinese: 1
-- joins in Chinese songs and rhymes: 2
-- uses simple Chinese words to name things: 1
-- recognises a few simple Chinese characters: 1
+domain: Chinese (questions and paragraph in Chinese)
+- 能听懂简单的华语指令: 1
+- 会跟着唱华文儿歌和童谣: 2
+- 会说几个熟悉的华语词语: 1
+- 认得几个简单的汉字，例如“人”、“大”、“口”: 1
 ```
 
 Good output:
-"Chinese is **the area [Child] finds hardest** at the moment, and he still needs a lot of support. He **does not yet follow instructions in Chinese** unless a teacher shows him what to do, and he **does not yet use Chinese words** to name things, usually answering in English. He **does not recognise Chinese characters** yet. He sometimes joins in Chinese songs when friends start them, though not on his own. To help with this, we will **repeat a few key words every day** with pictures and actions, and encourage him to **say one Chinese word** for things he uses in class."
+"华文是[Child]目前**觉得最难的学习领域**，他在这方面还需要很多帮助。老师用华语说话时，他**还不能听懂简单的指令**，常常要看老师示范才知道该做什么。他**还不会用华语说出熟悉的词语**，回答时通常用英语。他也**还不认得简单的汉字**。同伴开始唱华文儿歌时，他有时会跟着唱几句，但还不能自己唱。为了帮助他，我们会**每天重复几个常用的华语词语**，配合图片和动作，并鼓励他在课堂上**用华语说出一个词语**。"
 
 Note what it does not do: no invented places or events (no "at snack time" unless the comment says so), no scores, and it ends with the teachers' suggestion in its own words.

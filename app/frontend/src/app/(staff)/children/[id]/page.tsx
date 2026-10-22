@@ -4,7 +4,7 @@ import { BackLink } from "@/components/back-link";
 import type { ChildProfile, ClassesView, WorkspaceInfo } from "@peterhouse/shared";
 import { STATUS_LABEL, classLevel } from "@peterhouse/shared";
 import { apiGet } from "@/lib/api";
-import { ChildAvatar } from "@/components/ui";
+import { ChildPhoto } from "@/components/ChildPhoto";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -69,7 +69,7 @@ export default async function ChildProfilePage({ params }: { params: Promise<{ i
 
       <Card className="mb-6 gap-0 overflow-hidden p-0 shadow-none">
         <div className="flex flex-wrap items-start gap-5 p-5 md:p-6">
-          <ChildAvatar name={child.name} size={88} />
+          <ChildPhoto childId={child.id} photo={child.photo} name={child.firstName || child.name} size={88} />
           <div className="grid min-w-0 flex-1 basis-60 gap-2">
             <h1 className="font-heading text-3xl font-bold leading-tight tracking-tight md:text-4xl">
               {child.name}

@@ -1,7 +1,7 @@
 import {
   Archive, BookOpen, Calculator, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, EyeOff, FileText, Heart, HelpCircle,
   Home, Image as ImageIcon, Info, Languages, ListChecks, Lock, LogOut, Music, Pencil, Plus, RotateCcw, Search, Settings, Sparkles, Upload,
-  ClipboardCheck, Eye, Users, TriangleAlert, LayoutGrid, User, UserCog, ScrollText, CalendarClock, CalendarDays, Clock, Shield, ArrowRight, School, Baby, type LucideIcon,
+  ClipboardCheck, Eye, Users, TriangleAlert, LayoutGrid, User, UserCog, ScrollText, CalendarClock, CalendarDays, Clock, Shield, ArrowRight, School, Baby, GraduationCap, type LucideIcon,
 } from "lucide-react";
 
 const ICONS = {
@@ -37,6 +37,7 @@ const ICONS = {
   users: Users,
   classes: Users,
   children: Baby,
+  teachers: GraduationCap,
   warn: TriangleAlert,
   overview: LayoutGrid,
   user: User,
