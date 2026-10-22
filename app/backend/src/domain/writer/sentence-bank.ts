@@ -5,7 +5,7 @@
 // with the score's tone around it: 4–5 celebrate, 3 is steady, 1–2 are gentle, and "not seen yet" is never
 // described as a weakness.
 
-import { scoreOf, skillPhrase, type Pronoun, type Skill } from "@peterhouse/shared";
+import { isYoungLevel, scoreOf, skillPhrase, type Pronoun, type Skill } from "@peterhouse/shared";
 import type { ReviewForWriting } from "../anonymise";
 import type { WrittenDraft } from "./types";
 
@@ -13,9 +13,9 @@ function lowerFirst(s: string) {
   return s.charAt(0).toLowerCase() + s.slice(1);
 }
 
-const SUBJECT: Record<Pronoun, string> = { she: "she", he: "he", they: "they" };
-const OBJECT: Record<Pronoun, string> = { she: "her", he: "him", they: "them" };
-const POSSESSIVE: Record<Pronoun, string> = { she: "her", he: "his", they: "their" };
+const SUBJECT: Record<Pronoun, string> = { she: "she", he: "he" };
+const OBJECT: Record<Pronoun, string> = { she: "her", he: "him" };
+const POSSESSIVE: Record<Pronoun, string> = { she: "her", he: "his" };
 const MODALS = new Set(["can", "could", "will", "would", "may", "might", "must", "should", "is", "are", "has"]);
 const NUMBER_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 
@@ -33,16 +33,20 @@ export function withAdverb(phrase: string, adverb: string): string {
 
 /**
  * The sentences for one statement at one score, still using [Child]. `who` is the pronoun for sentences that
- * need one mid-way ("…show that she listens…"); for "they" the name is repeated so the verb still agrees.
+ * need one mid-way ("…show that she listens…").
  */
-export function sentencesFor(skill: Skill, level: number, pronoun: Pronoun): string[] {
+export function sentencesFor(skill: Skill, level: number, pronoun: Pronoun, young = false): string[] {
   const p = skillPhrase(skill, pronoun);
-  const who = pronoun === "they" ? "[Child]" : SUBJECT[pronoun];
+  const who = SUBJECT[pronoun];
+  // The youngest (PG, N1) are growing into everything: no "inspires friends" for a two-year-old (change 8).
+  if (young && level >= 4) {
+    return [`[Child] is growing in confidence here: ${who} ${withAdverb(p, "now")}.`, `We have loved watching [Child] grow: more and more, ${who} ${p}.`];
+  }
   switch (level) {
     case 1:
-      return [`With gentle support, [Child] is beginning to show that ${who} ${p}.`, `This is a new step for [Child]: with our help, ${who} is starting to show that ${who} ${p}.`];
+      return [`[Child] does not yet show that ${who} ${p}, and still needs an adult's help here.`, `This is hard for [Child] at the moment: ${who} does not yet show that ${who} ${p} without an adult alongside.`];
     case 2:
-      return [`With a little help, [Child] ${withAdverb(p, "sometimes")}.`, `[Child] is beginning to show that ${who} ${p}, especially with a little support.`];
+      return [`[Child] ${withAdverb(p, "sometimes")}, but only with reminders and not yet on ${POSSESSIVE[pronoun]} own.`, `With prompting, [Child] sometimes shows that ${who} ${p}, but not yet reliably.`];
     case 3:
       return [`[Child] ${withAdverb(p, "regularly")}.`, `In familiar routines, [Child] ${p}.`, `We often see that [Child] ${p}.`];
     case 4:
@@ -90,14 +94,14 @@ export function writeWithSentenceBank(review: ReviewForWriting, seed: string): W
         return;
       }
       // Rotate through the variants so neighbouring sentences start differently.
-      const options = sentencesFor(skill, level, pronoun);
+      const options = sentencesFor(skill, level, pronoun, isYoungLevel(review.level));
       const opener = (x: string) => x.split(" ").slice(0, 2).join(" ");
       const prev = sentences[sentences.length - 1];
       let pickIdx = (start + i) % options.length;
       for (let tries = 0; prev && tries < options.length && opener(options[pickIdx]) === opener(prev); tries++) pickIdx = (pickIdx + 1) % options.length;
       let s = options[pickIdx];
-      // After the first sentence, use the pronoun at the start (not for "they", to keep verbs right).
-      if (sentences.length % 2 === 1 && pronoun !== "they") s = s.replace(/^\[Child\] /, `${Subject} `);
+      // After the first sentence, use the pronoun at the start.
+      if (sentences.length % 2 === 1) s = s.replace(/^\[Child\] /, `${Subject} `);
       sentences.push(s);
     });
     const para: string[] = [];
@@ -108,6 +112,16 @@ export function writeWithSentenceBank(review: ReviewForWriting, seed: string): W
       if (sentences.length < area.skills.length) para.push(`We are still getting to know [Child] in some parts of ${area.name}.`);
     }
     if (ans?.note?.trim()) para.push(`One moment we noticed: ${lowerFirst(cleanQuote(ans.note))}.`);
+    // The teacher's suggestion always ends the area.
+    if (sentences.length) {
+      const plans = [
+        `Next term, we will keep offering hands-on ${area.name} activities that build on what [Child] enjoys.`,
+        `To help ${OBJECT[pronoun]} grow here, we will give [Child] more chances to practise ${area.name} in small groups.`,
+        `In class, we will encourage [Child] to talk about ${POSSESSIVE[pronoun]} thinking in ${area.name} in ${POSSESSIVE[pronoun]} own words.`,
+        `We will now focus on short, playful ${area.name} activities each day to build ${POSSESSIVE[pronoun]} confidence.`,
+      ];
+      para.push(plans[rubric.areas.indexOf(area) % plans.length]);
+    }
     if (area.love && ans?.love?.trim()) loved = ans.love;
     areas[area.key] = para.filter(Boolean).join(" ");
   }
@@ -132,7 +146,7 @@ export function writeWithSentenceBank(review: ReviewForWriting, seed: string): W
   const nextAreas = [...new Set(review.nextSteps.map((k) => skillInfo.get(k)?.area.name).filter((x): x is string => !!x))];
   const closing = [
     strengthClauses.length === 2
-      ? `We have especially loved seeing how [Child] ${strengthClauses[0]}, and how ${pronoun === "they" ? "[Child]" : SUBJECT[pronoun]} ${strengthClauses[1]}.`
+      ? `We have especially loved seeing how [Child] ${strengthClauses[0]}, and how ${SUBJECT[pronoun]} ${strengthClauses[1]}.`
       : strengthClauses.length === 1
         ? `We have especially loved seeing how [Child] ${strengthClauses[0]}.`
         : `[Child] has had a lovely semester.`,

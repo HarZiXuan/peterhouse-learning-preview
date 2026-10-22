@@ -14,6 +14,7 @@ import type {
   WriteOutcome,
 } from "@peterhouse/shared";
 import {
+  COVER_PHOTO_KEY,
   HOME_PICKS_MAX,
   LOVE_MAX,
   NOTE_MAX,
@@ -23,6 +24,7 @@ import {
   movement,
   normaliseRubric,
   readinessGaps,
+  rubricForLevel,
   scoreOf,
   skillPhrase,
   suggestStrengthsAndNextSteps,
@@ -71,7 +73,10 @@ export type ReviewRow = {
   admin_edited: boolean;
   updated_at: string;
   // joined
+  /** The first name: what the report calls the child. */
   preferred_name: string;
+  last_name: string;
+  /** First and last name together. */
   legal_name: string;
   chinese_name: string;
   date_of_birth: string;
@@ -89,7 +94,7 @@ const REVIEW_SELECT = `
   SELECT r.id, r.child_id, r.term_id, r.class_id, r.status, r.rubric, r.rubric_version_id, r.highlight, r.highlight_by, r.highlight_at, r.no_photo,
          r.staff_note, r.strengths, r.next_steps, r.draft, r.report_version, r.approved_by, r.approved_at, r.updated_at,
          r.submitted_by, r.submitted_at, r.change_note, r.change_note_by, r.change_note_at, r.taken_over_by, r.taken_over_at, r.admin_edited,
-         c.preferred_name, c.legal_name, c.chinese_name, c.date_of_birth, c.pronoun, c.photo_consent, c.status AS child_status,
+         c.preferred_name, c.last_name, c.legal_name, c.chinese_name, c.date_of_birth, c.pronoun, c.photo_consent, c.status AS child_status,
          k.name AS class_name, k.level AS class_level,
          CASE t.semester WHEN 1 THEN 'June' ELSE 'December' END AS season, t.year, t.status AS term_status
   FROM reviews r
@@ -103,7 +108,7 @@ async function hydrate(raw: RawReview): Promise<ReviewRow> {
   return {
     ...raw,
     // A review not opened yet shows the latest published questions; opening it freezes them (openReview).
-    rubric: raw.rubric ? normaliseRubric(raw.rubric) : await getRubric(),
+    rubric: raw.rubric ? normaliseRubric(raw.rubric) : rubricForLevel(await getRubric(), raw.class_level),
     opened: !!raw.rubric,
     chinese_name: openText(raw.chinese_name, "children.chinese_name"),
     highlight: openText(raw.highlight, "reviews.highlight"),
@@ -111,6 +116,7 @@ async function hydrate(raw: RawReview): Promise<ReviewRow> {
     change_note: openText(raw.change_note, "reviews.change_note"),
     draft: openJsonOrNull<Draft>(raw.draft, "reviews.draft"),
     preferred_name: openText(raw.preferred_name, "children.preferred_name"),
+    last_name: openText(raw.last_name, "children.last_name"),
     legal_name: openText(raw.legal_name, "children.legal_name"),
     date_of_birth: openText(raw.date_of_birth, "children.date_of_birth"),
   };
@@ -121,10 +127,25 @@ export async function getReviewRow(id: number, c?: Db): Promise<ReviewRow | null
   return raw ? hydrate(raw) : null;
 }
 
-/** Does this person belong to the class? Administrators belong to every class. */
+/** Does this person belong to the class? Administrators belong to every class; a subject teacher to the classes they teach. */
 export async function canAccessClass(user: SessionUser, classId: number): Promise<boolean> {
-  if (user.role === "admin") return true;
-  return !!(await one("SELECT 1 FROM class_staff WHERE class_id = $1 AND user_id = $2", [classId, user.id]));
+  return (await classRole(user, classId)) !== null;
+}
+
+/**
+ * How this person belongs to a class: "class" for its lead and co-teachers, "subject" for a teacher who only teaches
+ * lessons in it (change 7), or null when they do not.
+ */
+export async function classRole(user: SessionUser, classId: number, c?: Db): Promise<"admin" | "class" | "subject" | null> {
+  if (user.role === "admin") return "admin";
+  if (await one("SELECT 1 FROM class_staff WHERE class_id = $1 AND user_id = $2", [classId, user.id], c)) return "class";
+  if (await one("SELECT 1 FROM class_subject_teachers WHERE class_id = $1 AND user_id = $2", [classId, user.id], c)) return "subject";
+  return null;
+}
+
+/** A subject teacher rates and adds photos; the class's teachers write the report. */
+export async function isSubjectOnly(user: SessionUser, r: ReviewRow): Promise<boolean> {
+  return (await classRole(user, r.class_id)) === "subject";
 }
 
 /** Loads a review, but only for someone allowed to see its class. A review you may not see looks like one that does not exist. */
@@ -144,17 +165,23 @@ export const reviewRubric = (r: Pick<ReviewRow, "rubric">): Rubric => r.rubric;
 export function lockReason(user: SessionUser, r: ReviewRow): string | null {
   if (r.term_status !== "open") return "This review belongs to a finished semester.";
   if (r.status === "approved") return "This report is approved. An administrator can send it back if something must change.";
-  if (user.role === "admin") return r.taken_over_by ? null : "Teachers write the reports. Take this one over from Approvals to change it yourself.";
+  if (user.role === "admin") return r.taken_over_by ? null : "Teachers write the reports. Take this one over from Reports to change it yourself.";
   if (r.taken_over_by) return "An administrator has taken this report over, so it cannot be changed here for now.";
   if (r.status === "submitted") return "This report is waiting for review. Take it back to change something.";
   return null;
 }
 
-/** Loads a review for a change, refusing when it is locked. An administrator's change is marked for staff. */
-export async function getReviewForEdit(user: SessionUser, id: number, c?: Db): Promise<ReviewRow> {
+/**
+ * Loads a review for a change, refusing when it is locked. An administrator's change is marked for staff. A subject
+ * teacher may only rate (`area`); the report itself is for the class's teachers.
+ */
+export async function getReviewForEdit(user: SessionUser, id: number, c?: Db, area?: string): Promise<ReviewRow> {
   const r = await getReviewForUser(user, id, c);
   const why = lockReason(user, r);
   if (why) throw new HttpError(409, why, "locked");
+  if ((await classRole(user, r.class_id, c)) === "subject") {
+    if (!area) throw new HttpError(403, "You rate this class's children. Its class teachers write the report.", "subject_only");
+  }
   if (user.role === "admin" && !r.admin_edited) await run("UPDATE reviews SET admin_edited = true WHERE id = $1", [id], c);
   return r;
 }
@@ -166,7 +193,8 @@ export async function getReviewForEdit(user: SessionUser, id: number, c?: Db): P
 export async function openReview(r: ReviewRow): Promise<ReviewRow> {
   if (r.opened || r.status === "approved" || r.term_status !== "open") return r;
   const live = await publishedRubric();
-  await run("UPDATE reviews SET rubric = $1::jsonb, rubric_version_id = $2 WHERE id = $3 AND rubric IS NULL", [JSON.stringify(live.rubric), live.id, r.id]);
+  // Only the questions for the child's level (change 8): a Playgroup child is not asked about letters.
+  await run("UPDATE reviews SET rubric = $1::jsonb, rubric_version_id = $2 WHERE id = $3 AND rubric IS NULL", [JSON.stringify(rubricForLevel(live.rubric, r.class_level)), live.id, r.id]);
   return (await getReviewRow(r.id))!;
 }
 
@@ -259,7 +287,7 @@ async function markStale(c: Db, r: ReviewRow, keys: string[]) {
  * Saves one area. Changes save per area, so two people editing different areas never lose work.
  */
 export async function saveArea(user: SessionUser, id: number, areaKey: string, answer: AreaAnswer): Promise<SaveResult> {
-  const r = await getReviewForEdit(user, id);
+  const r = await getReviewForEdit(user, id, undefined, areaKey);
   const area = r.rubric.areas.find((a) => a.key === areaKey);
   if (!area) return { ok: false, error: "Unknown area." };
 
@@ -307,13 +335,14 @@ export async function saveStaffNote(user: SessionUser, id: number, note: string)
  * The child's last written review before this term, for "↑ since last time". Approved is preferred, but a report
  * the semester closed on before approval still holds that semester's ratings.
  */
-export async function previousApproved(childId: number, termId: number) {
+export async function previousApproved(childId: number, termId: number, level: ClassLevel) {
+  // Only within the same level (change 8): an older child's version of a shared question may ask more.
   const row = await one<{ id: number; rubric: unknown; semester: number; year: number }>(
-    `SELECT r.id, r.rubric, t.semester, t.year FROM reviews r JOIN terms t ON t.id = r.term_id
-     WHERE r.child_id = $1 AND r.draft IS NOT NULL
+    `SELECT r.id, r.rubric, t.semester, t.year FROM reviews r JOIN terms t ON t.id = r.term_id JOIN classes k ON k.id = r.class_id
+     WHERE r.child_id = $1 AND r.draft IS NOT NULL AND k.level = $3
        AND (t.year * 2 + t.semester) < (SELECT year * 2 + semester FROM terms WHERE id = $2)
      ORDER BY t.year DESC, t.semester DESC LIMIT 1`,
-    [childId, termId],
+    [childId, termId, level],
   );
   if (!row || !row.rubric) return null;
   const rubric = normaliseRubric(row.rubric);
@@ -329,7 +358,7 @@ export async function previousApproved(childId: number, termId: number) {
 }
 
 export async function skillMovements(r: ReviewRow, rubric: Rubric, answers: Record<string, AreaAnswer>) {
-  const prev = await previousApproved(r.child_id, r.term_id);
+  const prev = await previousApproved(r.child_id, r.term_id, r.class_level);
   const out: Record<string, Movement> = {};
   for (const a of rubric.areas)
     for (const s of a.skills) {
@@ -342,16 +371,17 @@ export async function skillMovements(r: ReviewRow, rubric: Rubric, answers: Reco
 // ─── Writing ─────────────────────────────────────────────────────────────
 
 export async function rosterFor(r: ReviewRow): Promise<Roster> {
-  const children = await many<{ id: number; preferred_name: string; legal_name: string; chinese_name: string }>(
-    "SELECT id, preferred_name, legal_name, chinese_name FROM children",
+  const children = await many<{ id: number; preferred_name: string; last_name: string; legal_name: string; chinese_name: string }>(
+    "SELECT id, preferred_name, last_name, legal_name, chinese_name FROM children",
   );
   const staff = await many<{ name: string }>("SELECT name FROM users");
   return {
-    child: [r.preferred_name, r.legal_name, r.chinese_name].filter(Boolean),
+    child: [r.preferred_name, r.last_name, r.legal_name, r.chinese_name].filter(Boolean),
     otherChildren: children
       .filter((c) => c.id !== r.child_id)
       .flatMap((c) => [
         openText(c.preferred_name, "children.preferred_name"),
+        openText(c.last_name, "children.last_name"),
         openText(c.legal_name, "children.legal_name"),
         openText(c.chinese_name, "children.chinese_name"),
       ])
@@ -376,14 +406,14 @@ async function forWriting(r: ReviewRow): Promise<{ input: ReviewForWriting; rubr
   return {
     rubric,
     answers,
-    input: { pronoun: r.pronoun, season: r.season, rubric, answers, strengths, nextSteps },
+    input: { pronoun: r.pronoun, season: r.season, level: r.class_level, rubric, answers, strengths, nextSteps },
   };
 }
 
-function notObservedSkillNames(rubric: Rubric, answers: Record<string, AreaAnswer>, areaKey?: string) {
+function notObservedSkillNames(rubric: Rubric, answers: Record<string, AreaAnswer>, pronoun: Pronoun, areaKey?: string) {
   return rubric.areas
     .filter((a) => !areaKey || a.key === areaKey)
-    .flatMap((a) => a.skills.filter((s) => scoreOf(answers[a.key], s.key) === 0).map((s) => skillPhrase(s)));
+    .flatMap((a) => a.skills.filter((s) => scoreOf(answers[a.key], s.key) === 0).map((s) => skillPhrase(s, pronoun)));
 }
 
 async function otherRosterNames(r: ReviewRow) {
@@ -401,7 +431,7 @@ function toParagraphs(r: ReviewRow, rubric: Rubric, answers: Record<string, Area
       text,
       flags: qualityFlags(text, kind, {
         neverUse: rubric.neverUse,
-        notObservedSkills: notObservedSkillNames(rubric, answers, areaKey),
+        notObservedSkills: notObservedSkillNames(rubric, answers, r.pronoun, areaKey),
         rosterNames: others,
       }),
       stale: false,
@@ -444,10 +474,8 @@ export async function writeDraft(user: SessionUser, id: number, opts: { provider
   } else {
     written = writeWithSentenceBank(input, String(r.id));
   }
-  // The ideas the teacher picked are the ones families get; the writer suggests two only when none were picked.
-  const picked = rubric.areas.flatMap((a) => answers[a.key]?.home ?? []).slice(0, HOME_PICKS_MAX);
-  if (picked.length) written.homeIdeas = picked;
-  else if (written.homeIdeas.length < 2) {
+  // The writer suggests the ideas to try at home, aimed at what the child finds hardest; the sentence bank tops them up.
+  if (written.homeIdeas.length < 2) {
     const fallback = writeWithSentenceBank(input, String(r.id)).homeIdeas;
     written.homeIdeas = [...written.homeIdeas, ...fallback.filter((h) => !written.homeIdeas.includes(h))].slice(0, 2);
   }
@@ -520,7 +548,7 @@ export async function rewriteParagraph(user: SessionUser, id: number, key: strin
     edited: false,
     flags: qualityFlags(text, kind, {
       neverUse: rubric.neverUse,
-      notObservedSkills: notObservedSkillNames(rubric, answers, areaKey),
+      notObservedSkills: notObservedSkillNames(rubric, answers, r.pronoun, areaKey),
       rosterNames: await otherRosterNames(r),
     }),
   });
@@ -543,7 +571,7 @@ export async function editParagraph(user: SessionUser, id: number, key: string, 
     para.edited = true;
     para.flags = qualityFlags(para.text, kind, {
       neverUse: r.rubric.neverUse,
-      notObservedSkills: notObservedSkillNames(r.rubric, answers, key.startsWith("area:") ? key.slice(5) : undefined),
+      notObservedSkills: notObservedSkillNames(r.rubric, answers, r.pronoun, key.startsWith("area:") ? key.slice(5) : undefined),
       rosterNames: await otherRosterNames(r),
     });
   }
@@ -602,17 +630,19 @@ export async function buildReportData(r: ReviewRow): Promise<ReportData> {
   const fallback = school.teachers.split(",").map((t) => t.trim()).filter(Boolean);
   const allowed = new Set(await reportPhotoIds(r.id));
   const photos = (await listPhotos(r.id)).filter((p) => allowed.has(p.id));
-  // Cover first: the first photo of the first domain that has one, else the first photo at all.
-  const ordered = [...rubric.areas.flatMap((a) => photos.filter((p) => p.area_key === a.key)), ...photos.filter((p) => !rubric.areas.some((a) => a.key === p.area_key))];
+  // The cover photo is chosen on its own; any other photo belongs to a learning area (or, from before that, to none).
+  const cover = photos.find((p) => p.area_key === COVER_PHOTO_KEY);
+  const ordered = [...rubric.areas.flatMap((a) => photos.filter((p) => p.area_key === a.key)), ...photos.filter((p) => p.area_key !== COVER_PHOTO_KEY && !rubric.areas.some((a) => a.key === p.area_key))];
   return {
     reviewId: r.id,
-    childName: r.preferred_name,
+    childName: r.legal_name,
     chineseName: r.chinese_name,
     childInitial: [...r.preferred_name][0]?.toUpperCase() ?? "",
     className: r.class_name,
     dateOfBirth: r.date_of_birth,
     season: r.season,
     year: r.year,
+    coverPhotoId: cover?.id ?? null,
     photoIds: ordered.map((p) => p.id),
     areas: rubric.areas.map((a) => {
       const ans = answers[a.key];

@@ -8,8 +8,6 @@ export type SettingsItem = {
   description: string;
   /** The link on the overview card. */
   action: string;
-  /** For a teacher, when the page is read-only for them. */
-  teacherAction?: string;
   adminOnly?: boolean;
   /** Extra words the search matches. */
   keywords?: string;
@@ -36,7 +34,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     key: "school",
     title: "School",
-    description: "What every report says, and what teachers rate.",
+    description: "What every report says, and the subjects on the timetable.",
     items: [
       {
         href: "/settings/report",
@@ -44,26 +42,17 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         icon: "school",
         description: "The school name, and whether these are the June or December reports.",
         action: "Edit report details",
-        teacherAction: "View report details",
+        adminOnly: true,
         keywords: "school name semester year period print",
       },
       {
-        href: "/classes",
-        title: "Classes",
-        icon: "classes",
-        description: "Levels, classes, their lead and co-teachers, and the children in each.",
-        action: "Manage classes",
+        href: "/settings/subjects",
+        title: "Subjects",
+        icon: "calendar",
+        description: "The subjects on each class’s weekly timetable, and their colours.",
+        action: "Manage subjects",
         adminOnly: true,
-        keywords: "level children teachers ratio",
-      },
-      {
-        href: "/questions",
-        title: "Questions",
-        icon: "questions",
-        description: "The statements teachers rate in each area, published as versions.",
-        action: "Edit questions",
-        adminOnly: true,
-        keywords: "rubric statements domains publish",
+        keywords: "timetable lessons english chinese maths happy hour",
       },
     ],
   },
@@ -94,17 +83,17 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   },
   {
     key: "semester",
-    title: "Semester",
-    description: "Move the school on to the next semester.",
+    title: "Report period",
+    description: "Which June or December reports teachers are writing.",
     items: [
       {
         href: "/settings/semester",
-        title: "Start next semester",
+        title: "Report period",
         icon: "semester",
-        description: "Close this semester and open the next. In January every class moves up a level.",
-        action: "Review and start",
+        description: "See where this period stands, move on to the next one, or go back if you moved on too soon.",
+        action: "Choose semester",
         adminOnly: true,
-        keywords: "term new year move up",
+        keywords: "semester term start new year move up undo revert back",
       },
     ],
   },

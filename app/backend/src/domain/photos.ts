@@ -2,7 +2,7 @@ import sharp from "sharp";
 import { decryptBytes, encryptBytes } from "../crypto";
 import { many, one, run } from "../db";
 import { HttpError } from "../http";
-import { PHOTOS_PER_AREA } from "@peterhouse/shared";
+import { COVER_PHOTO_KEY, PHOTOS_PER_AREA } from "@peterhouse/shared";
 
 export type ReviewPhoto = { id: number; position: number; area_key: string | null };
 
@@ -11,24 +11,17 @@ export const listPhotos = (reviewId: number) =>
 
 export const photoView = (p: ReviewPhoto) => ({ id: p.id, areaKey: p.area_key });
 
-/** Photos the report may show: only when the child's parents gave photo consent. */
+/** Photos the report shows: every photo added to the review. */
 export async function reportPhotoIds(reviewId: number): Promise<number[]> {
-  return (await hasPhotoConsent(reviewId)) ? (await listPhotos(reviewId)).map((p) => p.id) : [];
+  return (await listPhotos(reviewId)).map((p) => p.id);
 }
 
-export async function hasPhotoConsent(reviewId: number): Promise<boolean> {
-  const row = await one<{ consent: boolean }>("SELECT c.photo_consent AS consent FROM reviews r JOIN children c ON c.id = r.child_id WHERE r.id = $1", [reviewId]);
-  return !!row?.consent;
-}
-
-export const setPhotoConsent = (reviewId: number, consent: boolean) =>
-  run("UPDATE children SET photo_consent = $1 WHERE id = (SELECT child_id FROM reviews WHERE id = $2)", [consent, reviewId]);
-
-/** Re-encodes the upload (rotated upright, max 1600px, metadata stripped), encrypts it, and stores it in the database. */
+/**
+ * Re-encodes the upload (rotated upright, max 1600px, metadata stripped), encrypts it, and stores it in the database.
+ * The report has room for one photo on each learning page and one on the cover (`areaKey` is the area's key or "cover"),
+ * so a new photo takes the place of the one that was there.
+ */
 export async function addPhoto(reviewId: number, areaKey: string, input: Buffer): Promise<ReviewPhoto> {
-  if ((await listPhotos(reviewId)).filter((p) => p.area_key === areaKey).length >= PHOTOS_PER_AREA) {
-    throw new HttpError(400, `Up to ${PHOTOS_PER_AREA} photos for each learning area.`);
-  }
   let out: Buffer;
   try {
     out = await sharp(input).rotate().resize(1600, 1600, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 84 }).toBuffer();
@@ -40,6 +33,8 @@ export async function addPhoto(reviewId: number, areaKey: string, input: Buffer)
      VALUES ($1, $2, (SELECT COALESCE(MAX(position), -1) + 1 FROM review_photos WHERE review_id = $1), $3) RETURNING id, position, area_key`,
     [reviewId, encryptBytes(out), areaKey],
   );
+  const there = (await listPhotos(reviewId)).filter((p) => p.area_key === areaKey && p.id !== row!.id);
+  if (there.length + 1 > PHOTOS_PER_AREA) await run("DELETE FROM review_photos WHERE id = ANY($1::bigint[])", [there.map((p) => p.id)]);
   return row!;
 }
 

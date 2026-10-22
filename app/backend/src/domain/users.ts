@@ -105,6 +105,8 @@ export async function createUser(
   }
 }
 
+type SubjectTag = { name: string; color: string };
+
 export async function listUsers(): Promise<UserSummary[]> {
   const rows = await many<UserRow & { last_login_at: string | null }>("SELECT * FROM users ORDER BY active DESC, name");
   const { termId } = await workspace();
@@ -119,9 +121,26 @@ export async function listUsers(): Promise<UserSummary[]> {
       ORDER BY k.name`,
     [termId],
   );
+  // Classes a teacher only teaches a subject in (change 12).
+  const taught = await many<{ user_id: number; id: number; name: string; subjects: SubjectTag[] }>(
+    `SELECT x.user_id, k.id, k.name, json_agg(json_build_object('name', s.name, 'color', s.color) ORDER BY s.position, s.name) AS subjects
+       FROM class_subject_teachers x JOIN classes k ON k.id = x.class_id AND k.term_id = $1 JOIN subjects s ON s.id = x.subject_id
+      WHERE NOT EXISTS (SELECT 1 FROM class_staff cs WHERE cs.class_id = x.class_id AND cs.user_id = x.user_id)
+      GROUP BY x.user_id, k.id, k.name ORDER BY k.name`,
+    [termId],
+  );
+  // The subjects a class's lead or co-teacher is tagged with; none tagged means they teach every subject.
+  const tagged = await many<{ user_id: number; class_id: number; subjects: SubjectTag[] }>(
+    `SELECT x.user_id, x.class_id, json_agg(json_build_object('name', s.name, 'color', s.color) ORDER BY s.position, s.name) AS subjects
+       FROM class_subject_teachers x JOIN classes k ON k.id = x.class_id AND k.term_id = $1 JOIN subjects s ON s.id = x.subject_id
+      GROUP BY x.user_id, x.class_id`,
+    [termId],
+  );
+  const subjectsOf = (userId: number, classId: number) => tagged.find((t) => Number(t.user_id) === Number(userId) && Number(t.class_id) === Number(classId))?.subjects ?? [];
   const now = new Date();
   return rows.map((u) => {
     const mine = classes.filter((k) => k.user_id === u.id);
+    const subjectClasses = taught.filter((k) => Number(k.user_id) === Number(u.id)).map((k) => ({ id: Number(k.id), name: k.name, role: "subject" as const, subjects: k.subjects }));
     return {
       id: u.id,
       email: u.email,
@@ -131,7 +150,7 @@ export async function listUsers(): Promise<UserSummary[]> {
       mustChangePassword: u.must_change_password,
       lastLoginAt: u.last_login_at,
       lockedUntil: u.locked_until && new Date(u.locked_until) > now ? u.locked_until : null,
-      classes: mine.map((k) => ({ id: k.id, name: k.name, role: k.role })),
+      classes: [...mine.map((k) => ({ id: Number(k.id), name: k.name, role: k.role, subjects: subjectsOf(u.id, k.id) })), ...subjectClasses].sort((a, b) => a.name.localeCompare(b.name)),
       progress: { written: mine.reduce((n, k) => n + k.written, 0), total: mine.reduce((n, k) => n + k.total, 0) },
     };
   });
@@ -162,7 +181,11 @@ export async function updateUser(
       );
       // A new email is a new sign-in name: sign them out everywhere so the old one stops working at once.
       if (patch.email && patch.email.trim().toLowerCase() !== target.email.toLowerCase()) await run("DELETE FROM sessions WHERE user_id = $1", [id], c);
-      if (patch.active === false) await run("DELETE FROM sessions WHERE user_id = $1", [id], c);
+      // Deactivating signs them out and stops their calendar link; a reactivated person gets a new link.
+      if (patch.active === false) {
+        await run("DELETE FROM sessions WHERE user_id = $1", [id], c);
+        await run("UPDATE users SET calendar_token = NULL, calendar_token_hash = NULL WHERE id = $1", [id], c);
+      }
       // An administrator sees every class, so they are not listed as one class's teacher. A new teacher is placed on the Classes page.
       if (patch.role === "admin" && target.role === "teacher") await run("DELETE FROM class_staff WHERE user_id = $1", [id], c);
       // The log says what changed, not the new values: an email is personal data.

@@ -19,6 +19,8 @@ export function NewClass({
   existing,
   defaultLevel,
   placeholder,
+  placeholderClass,
+  placeholderLabel,
   year,
   dialog,
 }: {
@@ -26,6 +28,9 @@ export function NewClass({
   defaultLevel?: ClassLevel;
   /** A dashed tile for an empty level group instead of the toolbar button. */
   placeholder?: boolean;
+  /** How the dashed tile looks and what it says, for a level's column on the Classes page. */
+  placeholderClass?: string;
+  placeholderLabel?: string;
   /** This semester's year, to say which birth year the level takes. */
   year?: number;
   /** Open and close it from outside (a menu item) instead of its own button. */
@@ -77,11 +82,11 @@ export function NewClass({
         <DialogTrigger asChild>
           {existing ? (
             <Button variant="ghost" size="sm" className="text-muted-foreground">
-              <Icon name="edit" size={14} /> Rename
+              <Icon name="edit" size={14} /> Rename class
             </Button>
           ) : placeholder ? (
-            <button type="button" className="flex min-h-24 w-full items-center justify-center gap-2 rounded-xl border border-dashed text-sm font-semibold text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-card hover:text-foreground">
-              <Icon name="plus" size={16} stroke={2} /> Add a {defaultLevel} class
+            <button type="button" className={cn("flex min-h-24 w-full items-center justify-center gap-2 rounded-xl border border-dashed text-sm font-semibold text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-card hover:text-foreground", placeholderClass)}>
+              <Icon name="plus" size={16} stroke={2} /> {placeholderLabel ?? `Add a ${defaultLevel} class`}
             </button>
           ) : (
             <Button size="lg">

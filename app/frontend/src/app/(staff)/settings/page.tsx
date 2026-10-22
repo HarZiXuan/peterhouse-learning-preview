@@ -33,7 +33,7 @@ export default async function SettingsOverview() {
                       </p>
                       <p className="flex-1 text-sm text-muted-foreground">{i.description}</p>
                       <p className="flex items-center gap-1.5 text-sm font-semibold text-primary">
-                        {!admin && i.teacherAction ? i.teacherAction : i.action}
+                        {i.action}
                         <span className="transition-transform group-hover:translate-x-0.5">
                           <Icon name="arrow" size={15} stroke={2} />
                         </span>

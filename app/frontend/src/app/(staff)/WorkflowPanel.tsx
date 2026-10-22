@@ -222,7 +222,7 @@ export function WorkflowPanel({
         <div className="text-sm text-muted-foreground">{body}</div>
         {admin && !inApprovals && w.status === "submitted" && (
           <Link href={`/approvals/${reviewId}`} className="text-sm font-semibold text-primary underline-offset-4 hover:underline">
-            Open in Approvals, with the ratings beside it
+            Open in Reports, with the ratings beside it
           </Link>
         )}
       </div>

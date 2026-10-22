@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { BackLink } from "@/components/back-link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import type { QuestionBankView, QuestionChange } from "@peterhouse/shared";
-import { SCALE, fillTemplate } from "@peterhouse/shared";
+import type { ClassLevel, QuestionBankView, QuestionChange } from "@peterhouse/shared";
+import { CLASS_LEVELS, SCALE, fillTemplate, rubricForLevel } from "@peterhouse/shared";
 import { Icon, type IconName } from "@/components/icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,7 @@ const KIND: Record<QuestionChange["kind"], { label: string; icon: IconName; pill
   reordered: { label: "Reordered", icon: "up", pill: "" },
   prompt: { label: "Reworded", icon: "edit", pill: "border-warn/50 bg-warn/15 text-foreground" },
   home: { label: "Home ideas", icon: "edit", pill: "border-warn/50 bg-warn/15 text-foreground" },
+  levels: { label: "Levels", icon: "classes", pill: "border-warn/50 bg-warn/15 text-foreground" },
 };
 
 const SAMPLE = { name: "Mia", pronoun: "she" as const };
@@ -31,9 +33,12 @@ export function PublishView({ bank }: { bank: QuestionBankView }) {
   const [error, setError] = useState<string | null>(null);
   const firstChanged = bank.preview.areas.findIndex((a) => bank.changes.some((c) => c.areaKey === a.key));
   const [area, setArea] = useState(firstChanged < 0 ? 0 : firstChanged);
+  // Each level is asked only its own questions, so the preview is for one level at a time.
+  const [level, setLevel] = useState<ClassLevel>("K1");
+  const preview = rubricForLevel(bank.preview, level);
   const next = bank.live.version + 1;
   const blocked = bank.problems.length > 0 || bank.changes.length === 0;
-  const a = bank.preview.areas[area];
+  const a = preview.areas[area];
 
   const publish = () =>
     start(async () => {
@@ -41,7 +46,7 @@ export function PublishView({ bank }: { bank: QuestionBankView }) {
       const res = await publishQuestionsAction();
       if (res.ok) {
         toast.success(`Version ${res.version} published. New reviews use it from now on.`);
-        router.push(`/questions?published=${res.version}`);
+        router.push(`/reports?view=questions&published=${res.version}`);
       } else {
         setError(res.error);
         toast.error(res.error);
@@ -50,9 +55,7 @@ export function PublishView({ bank }: { bank: QuestionBankView }) {
 
   return (
     <>
-      <p className="crumbs">
-        <Link href="/questions">← Review questions</Link>
-      </p>
+      <BackLink fallback={{ href: "/reports?view=questions", label: "Questions" }} className="mb-2" />
       <header className="qa-head">
         <div>
           <h1>{bank.changes.length ? `Publish questions v${next}?` : "Preview the form"}</h1>
@@ -82,6 +85,7 @@ export function PublishView({ bank }: { bank: QuestionBankView }) {
                       </p>
                       <p style={{ marginTop: 4 }}>
                         {c.kind === "reordered" || c.kind === "home" ? c.text : <>“<Template text={c.text} />”</>}
+                        {c.kind === "levels" && <span className="muted small"> · was {c.was}</span>}
                       </p>
                       <p className="effect">{c.effect}</p>
                     </div>
@@ -126,7 +130,7 @@ export function PublishView({ bank }: { bank: QuestionBankView }) {
           </p>
           <div className="row">
             <Button asChild variant="outline">
-              <Link href="/questions">Keep editing</Link>
+              <Link href="/reports?view=questions">Keep editing</Link>
             </Button>
             <Button type="button" disabled={blocked || busy} onClick={publish}>
               <Icon name="publish" size={18} /> {busy ? "Publishing…" : `Publish v${next}`}
@@ -136,14 +140,29 @@ export function PublishView({ bank }: { bank: QuestionBankView }) {
 
         <section className="area-card preview" aria-label="Teacher preview">
           <p className="kicker">Teacher preview · for a child called {SAMPLE.name}</p>
-          <div role="tablist" aria-label="Domains" className="dtabs" style={{ marginTop: 12, marginBottom: 8 }}>
-            {bank.preview.areas.map((d, i) => (
-              <button key={d.key} className="dtab" type="button" role="tab" aria-selected={i === area} onClick={() => setArea(i)} style={{ minHeight: 48, flexBasis: 110 }}>
+          <div className="mt-3 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Level">
+            {CLASS_LEVELS.map((l) => (
+              <button
+                key={l.key}
+                type="button"
+                role="radio"
+                aria-checked={level === l.key}
+                onClick={() => setLevel(l.key)}
+                className="rounded-full border px-3 py-1 text-sm font-semibold text-muted-foreground aria-checked:border-foreground aria-checked:bg-foreground aria-checked:text-background"
+                title={l.name}
+              >
+                {l.key}
+              </button>
+            ))}
+          </div>
+          <div role="tablist" aria-label="Domains" className="dtabs compact" style={{ marginTop: 12, marginBottom: 8 }}>
+            {preview.areas.map((d, i) => (
+              <button key={d.key} className="dtab" type="button" role="tab" aria-selected={i === area} onClick={() => setArea(i)}>
                 <span className="ic">
                   <Icon name={d.icon ?? d.key} size={17} />
                 </span>
                 <b>{d.shortName}</b>
-                <small>{d.skills.length} questions</small>
+                <small>{d.skills.length}</small>
               </button>
             ))}
           </div>
@@ -155,7 +174,7 @@ export function PublishView({ bank }: { bank: QuestionBankView }) {
               <h2>
                 {a.name} {a.subName && <span className="han">{a.subName}</span>}
               </h2>
-              <p>Tap the bar that fits best. Taller means more confident.</p>
+              <p>Tap the number that fits best. 1 is still learning, 5 really shines.</p>
             </div>
           </div>
           {a.skills.map((s) => (

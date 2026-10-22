@@ -66,15 +66,15 @@ describe("the administrator manages classes", () => {
     // Only teachers can be placed, and an administrator cannot be.
     await expect(C.setClassStaff(k1, admin.id, [])).rejects.toMatchObject({ status: 400 });
 
-    const child = { chineseName: "", pronoun: "she" as const };
-    const mia = (await C.addChild({ ...child, name: "Mia", dateOfBirth: born(5), classId: k1 })).reviewId;
+    const child = { lastName: "", chineseName: "", pronoun: "she" as const };
+    const mia = (await C.addChild({ ...child, firstName: "Mia", dateOfBirth: born(5), classId: k1 })).reviewId;
     // No exceptions: a four-year-old cannot join K1, a six-year-old cannot join Playgroup, and a birthday is required.
-    await expect(C.addChild({ ...child, name: "Ava", dateOfBirth: born(4), classId: k1 })).rejects.toMatchObject({ status: 409, code: "wrong_level" });
-    await expect(C.addChild({ ...child, name: "Sam", dateOfBirth: born(6), classId: pg })).rejects.toMatchObject({ status: 409, code: "wrong_level" });
-    await expect(C.addChild({ ...child, name: "Kit", dateOfBirth: born(1), classId: pg })).rejects.toMatchObject({ status: 409 });
-    await expect(C.addChild({ ...child, name: "Nob", dateOfBirth: "", classId: k1 })).rejects.toMatchObject({ status: 409 });
-    const ava = (await C.addChild({ ...child, name: "Ava", dateOfBirth: born(4), classId: n2 })).reviewId;
-    const ben = (await C.addChild({ ...child, name: "Ben", dateOfBirth: born(4, "01-01"), classId: n2 })).reviewId;
+    await expect(C.addChild({ ...child, firstName: "Ava", dateOfBirth: born(4), classId: k1 })).rejects.toMatchObject({ status: 409, code: "wrong_level" });
+    await expect(C.addChild({ ...child, firstName: "Sam", dateOfBirth: born(6), classId: pg })).rejects.toMatchObject({ status: 409, code: "wrong_level" });
+    await expect(C.addChild({ ...child, firstName: "Kit", dateOfBirth: born(1), classId: pg })).rejects.toMatchObject({ status: 409 });
+    await expect(C.addChild({ ...child, firstName: "Nob", dateOfBirth: "", classId: k1 })).rejects.toMatchObject({ status: 409 });
+    const ava = (await C.addChild({ ...child, firstName: "Ava", dateOfBirth: born(4), classId: n2 })).reviewId;
+    const ben = (await C.addChild({ ...child, firstName: "Ben", dateOfBirth: born(4, "01-01"), classId: n2 })).reviewId;
 
     // Teachers see only their own class.
     expect((await W.listChildren(lim)).map((c) => c.name)).toEqual(["Mia"]);
@@ -99,7 +99,7 @@ describe("the administrator manages classes", () => {
     await C.setChildLeft(ben, false);
 
     // A corrected birthday must fit the class, or move the child to a class of the new level at the same time.
-    const mias = { name: "Mia", chineseName: "", pronoun: "she" as const, dateOfBirth: born(4) };
+    const mias = { firstName: "Mia", lastName: "", chineseName: "", pronoun: "she" as const, dateOfBirth: born(4) };
     await expect(C.updateChild(mia, mias)).rejects.toMatchObject({ status: 409, code: "wrong_level" });
     await C.updateChild(mia, mias, n2);
     expect((await C.classDetail(n2)).pupils.find((p) => p.name === "Mia")).toMatchObject({ level: "N2" });
@@ -130,7 +130,7 @@ describe("a new semester", () => {
     const C = await import("../src/domain/classes");
     const W = await import("../src/domain/workspace");
     const k2 = await C.createClass("K2 Star", "K2");
-    await C.addChild({ name: "Zoe", chineseName: "", pronoun: "she", dateOfBirth: born(6), classId: k2 });
+    await C.addChild({ firstName: "Zoe", lastName: "", chineseName: "", pronoun: "she", dateOfBirth: born(6), classId: k2 });
 
     const sem = (await W.getReportPeriod()).season;
     // Get to Semester 2 first, so the next start is a new year.
@@ -149,5 +149,91 @@ describe("a new semester", () => {
     expect((await C.classesView()).flagged).toEqual([]);
     // The K2 child has gone on to primary school.
     expect((await W.listChildren(admin)).map((c) => c.name).sort()).toEqual(["Ava", "Ben", "Mia"]);
+  });
+
+  it("can be undone while nothing has been done in it: classes and the K2 child come back", async () => {
+    const C = await import("../src/domain/classes");
+    const W = await import("../src/domain/workspace");
+    const back = await W.reopenPreviousSemester(admin);
+    expect(back).toMatchObject({ semester: 2, restored: 1 });
+    expect((await C.classesFor(admin)).map((k) => `${k.name}:${k.level}:${k.children}`)).toEqual(["N2 Rainbow:N2:2", "K1 Sunflower:K1:1", "K2 Star:K2:1"]);
+    expect((await W.listChildren(admin)).map((c) => c.name).sort()).toEqual(["Ava", "Ben", "Mia", "Zoe"]);
+    // Starting again gives the same result as the first time.
+    expect((await W.startNextSemester(admin)).graduated).toBe(1);
+  });
+
+  it("cannot be undone once a rating has been saved in the new semester", async () => {
+    const W = await import("../src/domain/workspace");
+    const R = await import("../src/domain/reviews");
+    const [kid] = await W.listChildren(lim);
+    const row = await R.openReview((await R.getReviewRow(kid.reviewId))!);
+    await R.saveArea(lim, kid.reviewId, row.rubric.areas[0].key, { skills: {}, note: "Started.", visited: true });
+    await expect(W.reopenPreviousSemester(admin)).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe("choosing the report period", () => {
+  it("moves back and forth without deleting anything, and the K2 child follows the year", async () => {
+    const C = await import("../src/domain/classes");
+    const W = await import("../src/domain/workspace");
+    const now = await W.getReportPeriod();
+    const sem = now.season === "June" ? 1 : 2;
+    // Back to the period before (work has started in this one, so this is not an undo: it just switches).
+    const back = sem === 1 ? { semester: 2 as const, year: now.year - 1 } : { semester: 1 as const, year: now.year };
+    await W.openPeriod(admin, back.semester, back.year);
+    expect(await W.getReportPeriod()).toEqual({ season: back.semester === 1 ? "June" : "December", year: back.year });
+    expect((await C.classesFor(admin)).map((k) => k.level)).toContain("K2");
+    expect((await W.listChildren(admin)).map((c) => c.name)).toContain("Zoe");
+    // Forward again to the period that already exists.
+    await W.openPeriod(admin, sem, now.year);
+    expect((await W.listChildren(admin)).map((c) => c.name)).not.toContain("Zoe");
+    // Only the next period can be created, not one further away.
+    await expect(W.openPeriod(admin, sem, now.year + 5)).rejects.toMatchObject({ status: 409 });
+    // The semester before the very first one can be created, with the same classes and children.
+    const { one } = await import("../src/db");
+    const first = await one<{ semester: number; year: number }>("SELECT semester, year FROM terms ORDER BY year, semester LIMIT 1");
+    if (first!.semester === 2) {
+      // These children were added in the test, today: pretend they joined long ago, so they belong in the earlier semester.
+      await (await import("../src/db")).run("UPDATE children SET joined_on = '2000-01-01'");
+      const made = await W.openPeriod(admin, 1, first!.year);
+      expect(made.created).toBe(true);
+      expect((await W.listChildren(admin)).map((c) => c.name).sort()).toEqual(["Ava", "Ben", "Mia", "Zoe"]);
+      // A child who joined in September has no Semester 1 report (it ended in June), only the later ones.
+      const k = (await C.classesFor(admin)).find((x) => x.level === "K1")!;
+      const late = await C.addChild({ firstName: "Late", lastName: "Joiner", chineseName: "", pronoun: "he", dateOfBirth: `${first!.year - 5}-06-15`, classId: k.id, joinedOn: `${first!.year}-09-01` });
+      expect((await W.listChildren(admin)).map((c) => c.name)).not.toContain("Late Joiner");
+      await W.openPeriod(admin, 2, first!.year);
+      expect((await W.listChildren(admin)).map((c) => c.name)).toContain("Late Joiner");
+      await W.removeChild(admin, late.reviewId);
+      await W.openPeriod(admin, sem, now.year);
+    } else {
+      await W.openPeriod(admin, sem, now.year);
+    }
+    await expect(W.openPeriod(lim, back.semester, back.year)).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe("adding a child with their profile", () => {
+  it("keeps the first day, parents and notes given when the child is added", async () => {
+    const C = await import("../src/domain/classes");
+    const Ch = await import("../src/domain/children");
+    const k2 = await C.createClass("K2 Profile Test", "K2");
+    const child = { lastName: "", chineseName: "", pronoun: "she" as const, dateOfBirth: born(6), classId: k2 };
+    const lena = await C.addChild({
+      ...child,
+      firstName: "Lena",
+      joinedOn: "2026-01-12",
+      guardians: [{ name: " Ms Koh ", relationship: "Mother", phone: "9123 4567", email: "" }, { name: "", relationship: "", phone: "", email: "" }],
+      notes: "  Picked up by her grandmother on Fridays.  ",
+    });
+    const profile = await Ch.childProfile(lena.childId);
+    expect(profile.joinedOn).toBe("2026-01-12");
+    expect(profile.guardians).toEqual([{ name: "Ms Koh", relationship: "Mother", phone: "9123 4567", email: "" }]);
+    expect(profile.notes).toBe("Picked up by her grandmother on Fridays.");
+    // Left out, the first day is today and there are no parents or notes yet.
+    const plain = await Ch.childProfile((await C.addChild({ ...child, firstName: "Max" })).childId);
+    expect(plain.guardians).toEqual([]);
+    expect(plain.notes).toBe("");
+    expect(plain.joinedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });

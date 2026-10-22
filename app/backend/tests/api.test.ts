@@ -110,7 +110,7 @@ describe("protection against cross-site requests and abuse", () => {
 
   it("refuses a state-changing request from another website's page", async () => {
     const r = await login("admin@x.sg", "admin long passphrase");
-    const body = { name: "X", chineseName: "", pronoun: "she", dateOfBirth: k1Birthday, classId };
+    const body = { firstName: "X", lastName: "", chineseName: "", pronoun: "she", dateOfBirth: k1Birthday, classId };
     const evil = await call("POST", "/api/admin/children", { cookie: r.cookie, origin: "https://evil.example", body });
     expect(evil.status).toBe(403);
     const ok = await call("POST", "/api/admin/children", { cookie: r.cookie, origin: "http://localhost:3000", body });
@@ -119,7 +119,7 @@ describe("protection against cross-site requests and abuse", () => {
 
   it("validates input and hides internals", async () => {
     const r = await login("admin@x.sg", "admin long passphrase");
-    expect((await call("POST", "/api/admin/children", { cookie: r.cookie, body: { name: "X", chineseName: "", pronoun: "robot", dateOfBirth: k1Birthday, classId } })).status).toBe(400);
+    expect((await call("POST", "/api/admin/children", { cookie: r.cookie, body: { firstName: "X", lastName: "", chineseName: "", pronoun: "robot", dateOfBirth: k1Birthday, classId } })).status).toBe(400);
     expect((await call("GET", "/api/reviews/abc", { cookie: r.cookie })).status).toBe(404);
     const res = await call("GET", "/api/reviews/999999", { cookie: r.cookie });
     expect(res.status).toBe(404);
@@ -151,7 +151,7 @@ describe("roles and classes", () => {
   it("keeps a child's data away from a teacher outside the class", async () => {
     const teacher = await login("lim@x.sg", "my own long passphrase");
     const admin = await login("admin@x.sg", "admin long passphrase");
-    const child = { name: "Private Child", chineseName: "", pronoun: "he", dateOfBirth: k1Birthday, classId };
+    const child = { firstName: "Private", lastName: "Child", chineseName: "", pronoun: "he", dateOfBirth: k1Birthday, classId };
     // Only the administrator adds children.
     expect((await call("POST", "/api/admin/children", { cookie: teacher.cookie, body: child })).status).toBe(403);
     const created = await call("POST", "/api/admin/children", { cookie: admin.cookie, body: child });
@@ -183,8 +183,15 @@ describe("roles and classes", () => {
     const users = async () => (await call("GET", "/api/admin/users", { cookie: admin.cookie })).json.users as Record<string, any>[];
     const limRow = (await users()).find((u) => u.email === "lim@x.sg")!;
     // Each teacher's classes, and how many of their children have a written report.
-    expect(limRow.classes).toEqual([{ id: classId, name: "K1 Sunflower", role: "lead" }]);
+    expect(limRow.classes).toEqual([{ id: classId, name: "K1 Sunflower", role: "lead", subjects: [] }]);
     expect(limRow.progress).toEqual({ written: 0, total: 2 });
+
+    // A teacher's own page: their classes and every report in them, for the administrator only.
+    const detail = await call("GET", `/api/admin/users/${limRow.id}/detail`, { cookie: admin.cookie });
+    expect(detail.json.user.classes).toEqual(limRow.classes);
+    expect(detail.json.reports).toHaveLength(2);
+    expect((await call("GET", `/api/admin/users/${limRow.id}/detail`, { cookie: lim.cookie })).status).toBe(403);
+    expect((await call("GET", "/api/admin/users/999999/detail", { cookie: admin.cookie })).status).toBe(404);
 
     // Only the administrator edits accounts; a teacher cannot even rename themselves.
     expect((await call("PATCH", `/api/admin/users/${limRow.id}`, { cookie: lim.cookie, body: { name: "Lim" } })).status).toBe(403);

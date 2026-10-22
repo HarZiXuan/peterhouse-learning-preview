@@ -5,7 +5,7 @@ import { countWords } from "@peterhouse/shared";
 
 export const LENGTHS: Record<"opening" | "area" | "closing", [number, number]> = {
   opening: [70, 100],
-  area: [70, 100],
+  area: [100, 140],
   closing: [70, 100],
 };
 

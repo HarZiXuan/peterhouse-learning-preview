@@ -13,6 +13,15 @@ export const LEVEL_TINT: Record<ClassLevel, string> = {
   K2: "bg-[#091f34] text-white",
 };
 
+/** Each age group's column on the Classes page: a soft ground, a stronger chip, deep text and a dashed outline for "add". */
+export const LEVEL_COLUMN: Record<ClassLevel, { soft: string; chip: string; deep: string; dash: string }> = {
+  PG: { soft: "bg-[#fcefef]", chip: "bg-[#f5ccce]", deep: "text-[#6e1118]", dash: "border-[#e7b6b9] hover:bg-[#f9e3e3]" },
+  N1: { soft: "bg-[#fff7dc]", chip: "bg-[#fde7a4]", deep: "text-[#5a4300]", dash: "border-[#ecd78b] hover:bg-[#fff0c2]" },
+  N2: { soft: "bg-[#eaf6fd]", chip: "bg-[#c7e9fa]", deep: "text-[#0a3a57]", dash: "border-[#a9d4ea] hover:bg-[#dcf0fa]" },
+  K1: { soft: "bg-[#e6f2f8]", chip: "bg-[#a9d4ea]", deep: "text-[#06304a]", dash: "border-[#92c0d8] hover:bg-[#d8ebf4]" },
+  K2: { soft: "bg-[#e8ebf0]", chip: "bg-[#c3cad6]", deep: "text-[#091f34]", dash: "border-[#aab3c2] hover:bg-[#dde2ea]" },
+};
+
 const PERSON_TINTS = ["bg-[#f5ccce] text-[#6e1118]", "bg-[#c7e9fa] text-[#0a3a57]", "bg-[#fde7a4] text-[#5a4300]", "bg-[#d8ead9] text-[#1f5236]"];
 export const personTint = (i: number) => PERSON_TINTS[i % PERSON_TINTS.length];
 

@@ -64,8 +64,8 @@ describe("what is sent for writing", () => {
     const body = JSON.parse(sent[0]).contents[0].parts[0].text as string;
     expect(body).toContain("pronoun: she");
     expect(body).toMatch(/semester: Semester [12]/);
-    expect(body).toContain("domain: English\n- listens well and responds in a group: 4");
-    expect(body).toContain("- recognises letters and the sounds they make: not seen yet");
+    expect(body).toContain("domain: English\n- reads simple sentences and common sight words: 4");
+    expect(body).toContain("- answers questions about a story read aloud: not seen yet");
     expect(body).toContain('comment (name-scrubbed): "[Child]和[Friend]一起唱歌"');
     // The name is put back on the school's own side.
     const draft = (await R.getReviewRow(reviewId))!.draft!;

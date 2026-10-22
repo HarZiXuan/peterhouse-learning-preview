@@ -134,4 +134,24 @@ describe("teachers write, the administrator approves", () => {
     expect(teachers).toMatchObject({ version: 5, decision: "changes_requested", note: "Taken over and changed by an administrator." });
     expect((await A.approvalExtras(id)).changedSinceLast).toHaveLength(1);
   });
+
+  it("lists every report period, and the queue can open a past one", async () => {
+    const A = await import("../src/domain/approval");
+    const W = await import("../src/domain/workspace");
+    const before = await A.periodsView();
+    expect(before).toHaveLength(1);
+    expect(before[0]).toMatchObject({ current: true, total: 1, counts: { approved: 1 } });
+    await W.startNextSemester(admin);
+    const [now, past] = await A.periodsView();
+    expect(now).toMatchObject({ current: true, total: 1, counts: { approved: 0, not_submitted: 1 } });
+    expect(past).toMatchObject({ current: false, termId: before[0].termId, total: 1, counts: { approved: 1 } });
+    expect((await A.approvalsView({ status: "approved", termId: past.termId })).items.map((i) => i.childName)).toEqual(["Mia"]);
+    expect((await A.approvalsView({ status: "approved" })).items).toEqual([]);
+    await expect(A.approvalsView({ termId: 999999 })).rejects.toMatchObject({ status: 404 });
+    // A teacher's own Reports page: both semesters of their class, nothing for someone who teaches no class.
+    expect((await A.periodsView(lim.id)).map((p) => p.total)).toEqual([1, 1]);
+    expect((await A.approvalsView({ status: "approved", termId: past.termId, forUser: lim.id })).items.map((i) => i.childName)).toEqual(["Mia"]);
+    expect((await A.approvalsView({ status: "approved", termId: past.termId, forUser: 987654 })).items).toEqual([]);
+    expect((await A.periodsView(987654)).map((p) => p.total)).toEqual([0]);
+  });
 });

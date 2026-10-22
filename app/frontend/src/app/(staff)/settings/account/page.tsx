@@ -17,7 +17,7 @@ export default async function AccountPage() {
             "Classes",
             classes.length === 0
               ? "Not in a class yet"
-              : classes.map((k) => `${k.name} (${k.lead?.id === user.id ? "lead" : "co-teacher"})`).join(", "),
+              : classes.map((k) => `${k.name} (${k.lead?.id === user.id ? "lead" : k.co.some((c) => c.id === user.id) ? "co-teacher" : "subject teacher"})`).join(", "),
           ] as [string, React.ReactNode],
         ]
       : []),

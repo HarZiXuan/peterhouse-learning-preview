@@ -1,10 +1,12 @@
 // Classes, their teachers and their children (CHANGES-TO-MAKE change 4). Only an administrator changes any of this;
 // a teacher sees the classes they are in. A child's enrolment in a class for a semester is their review.
-import type { ClassChild, ClassDetail, ClassesView, ClassLevel, ClassSummary, LevelProblem, NewChildInput, Pronoun, SessionUser, StaffRef } from "@peterhouse/shared";
+import type { ClassChild, ClassDetail, ClassesView, ClassLevel, ClassSummary, LevelProblem, NewChildInput, Pronoun, SessionUser, StaffRef, SubjectTeacher } from "@peterhouse/shared";
 import { CLASS_LEVEL_KEYS, birthYearOf, classCapacity, levelForBirthday } from "@peterhouse/shared";
 import { many, one, run, tx, type Db } from "../db";
 import { HttpError, notFound } from "../http";
-import { openText, sealText } from "./records";
+import { openText, sealJson, sealText } from "./records";
+import { clearOutsideTeachers, TAUGHT_BY } from "./staff";
+import { listSubjects } from "./timetable";
 import { workspace } from "./workspace";
 
 const LEVEL_ORDER = `array_position(ARRAY[${CLASS_LEVEL_KEYS.map((k) => `'${k}'`).join(",")}]::text[], k.level)`;
@@ -21,7 +23,8 @@ async function summaries(termId: number, filter: { all: boolean; userId: number;
   const year = await termYear(termId, c);
   const rows = await many<{ id: number; name: string; level: ClassLevel }>(
     `SELECT k.id, k.name, k.level FROM classes k
-      WHERE k.term_id = $1 AND ($2 OR k.id IN (SELECT class_id FROM class_staff WHERE user_id = $3)) AND ($4::bigint IS NULL OR k.id = $4)
+      WHERE k.term_id = $1 AND ($2 OR k.id IN ${TAUGHT_BY(3)})
+        AND ($4::bigint IS NULL OR k.id = $4)
       ORDER BY ${LEVEL_ORDER}, k.name`,
     [termId, filter.all, filter.userId, filter.classId ?? null],
     c,
@@ -62,11 +65,14 @@ export async function classesFor(user: SessionUser): Promise<ClassSummary[]> {
 
 type PupilRow = {
   review_id: number;
+  child_id: number;
   class_id: number;
   class_level: ClassLevel;
   status: ClassChild["status"];
   has_report: boolean;
   preferred_name: string;
+  last_name: string;
+  legal_name: string;
   chinese_name: string;
   date_of_birth: string;
   pronoun: Pronoun;
@@ -74,8 +80,8 @@ type PupilRow = {
 };
 
 const PUPIL_SELECT = `
-  SELECT r.id AS review_id, r.class_id, k.level AS class_level, r.status, r.draft IS NOT NULL AS has_report,
-         c.preferred_name, c.chinese_name, c.date_of_birth, c.pronoun, c.status AS child_status
+  SELECT r.id AS review_id, r.child_id, r.class_id, k.level AS class_level, r.status, r.draft IS NOT NULL AS has_report,
+         c.preferred_name, c.last_name, c.legal_name, c.chinese_name, c.date_of_birth, c.pronoun, c.status AS child_status
     FROM reviews r JOIN children c ON c.id = r.child_id JOIN classes k ON k.id = r.class_id`;
 
 function pupil(p: PupilRow, year: number): ClassChild & { classId: number; classLevel: ClassLevel } {
@@ -83,9 +89,12 @@ function pupil(p: PupilRow, year: number): ClassChild & { classId: number; class
   const lv = childLevel(dob, year);
   return {
     reviewId: p.review_id,
+    childId: p.child_id,
     classId: p.class_id,
     classLevel: p.class_level,
-    name: openText(p.preferred_name, "children.preferred_name"),
+    name: openText(p.legal_name, "children.legal_name"),
+    firstName: openText(p.preferred_name, "children.preferred_name"),
+    lastName: openText(p.last_name, "children.last_name"),
     chineseName: openText(p.chinese_name, "children.chinese_name"),
     dateOfBirth: dob,
     pronoun: p.pronoun,
@@ -105,10 +114,10 @@ export async function classesView(): Promise<ClassesView> {
   const year = await termYear(termId);
   const classes = await summaries(termId, { all: true, userId: 0 });
   const teachers = await many<StaffRef>("SELECT id, name FROM users WHERE role = 'teacher' AND active ORDER BY name");
-  const pupils = (await many<PupilRow>(`${PUPIL_SELECT} WHERE r.term_id = $1 AND c.status = 'active'`, [termId])).map((p) => pupil(p, year));
+  const pupils = (await many<PupilRow>(`${PUPIL_SELECT} WHERE r.term_id = $1`, [termId])).map((p) => pupil(p, year)).sort(byName);
   // A level problem (no birthday, too young, too old) or a birthday that no longer fits the class.
-  const flagged = pupils.filter((p) => p.levelProblem || p.level !== p.classLevel).sort(byName);
-  return { year, classes, teachers, flagged };
+  const flagged = pupils.filter((p) => !p.left && (p.levelProblem || p.level !== p.classLevel));
+  return { year, classes, teachers, flagged, pupils };
 }
 
 export async function classDetail(id: number): Promise<ClassDetail> {
@@ -117,7 +126,17 @@ export async function classDetail(id: number): Promise<ClassDetail> {
   if (!summary) throw notFound("That class");
   const year = await termYear(termId);
   const pupils = (await many<PupilRow>(`${PUPIL_SELECT} WHERE r.class_id = $1`, [id])).map((p) => pupil(p, year)).sort(byName);
-  return { ...summary, year, pupils };
+  const taught = (
+    await many<StaffRef & { subject_ids: number[] }>(
+      "SELECT u.id, u.name, array_agg(x.subject_id ORDER BY x.subject_id) AS subject_ids FROM class_subject_teachers x JOIN users u ON u.id = x.user_id WHERE x.class_id = $1 AND u.active GROUP BY u.id, u.name ORDER BY u.name",
+      [id],
+    )
+  ).map((r): SubjectTeacher => ({ id: Number(r.id), name: r.name, subjectIds: r.subject_ids.map(Number) }));
+  const staff = new Set([summary.lead?.id, ...summary.co.map((c) => c.id)]);
+  // A lead or co-teacher with no subjects teaches every subject.
+  const teacherSubjects = Object.fromEntries(taught.filter((t) => staff.has(t.id)).map((t) => [t.id, t.subjectIds]));
+  const subjectTeachers = taught.filter((t) => !staff.has(t.id));
+  return { ...summary, year, pupils, subjectTeachers, teacherSubjects, subjects: (await listSubjects()).filter((x) => x.active) };
 }
 
 function uniqueName(e: unknown): never {
@@ -178,11 +197,43 @@ export async function setClassStaff(id: number, leadId: number | null, coIds: nu
   const ok = await many<{ id: number }>("SELECT id FROM users WHERE id = ANY($1::bigint[]) AND role = 'teacher' AND active", [wanted]);
   if (ok.length !== wanted.length) throw new HttpError(400, "Only active teacher accounts can be placed in a class.");
   await tx(async (c) => {
+    const before = await many<{ user_id: number }>("SELECT user_id FROM class_staff WHERE class_id = $1", [id], c);
     await run("DELETE FROM class_staff WHERE class_id = $1", [id], c);
     if (leadId) await run("INSERT INTO class_staff (class_id, user_id, role) VALUES ($1, $2, 'lead')", [id, leadId], c);
     for (const u of co) await run("INSERT INTO class_staff (class_id, user_id, role) VALUES ($1, $2, 'co')", [id, u], c);
+    // Someone taken off the class takes their subjects with them.
+    await run("DELETE FROM class_subject_teachers WHERE class_id = $1 AND user_id = ANY($2::bigint[]) AND NOT (user_id = ANY($3::bigint[]))", [id, before.map((b) => Number(b.user_id)), wanted], c);
+    await clearOutsideTeachers(id, c);
   });
 }
+
+/**
+ * Sets the subjects a teacher teaches in a class (change 12). For a subject teacher, no subjects takes them off the class
+ * and its lessons; for a lead or co-teacher it means every subject. Only the administrator does this, on the class page.
+ */
+export async function setSubjectTeacher(classId: number, userId: number, subjectIds: number[]) {
+  await openClass(classId);
+  if (!(await one("SELECT 1 FROM users WHERE id = $1 AND role = 'teacher' AND active", [userId]))) throw new HttpError(400, "Only active teacher accounts can teach a class.");
+  const ids = [...new Set(subjectIds)];
+  const found = await many<{ id: number }>("SELECT id FROM subjects WHERE id = ANY($1::bigint[]) AND active", [ids]);
+  if (found.length !== ids.length) throw new HttpError(400, "Choose subjects from the school's subject list.");
+  await tx(async (c) => {
+    await run("DELETE FROM class_subject_teachers WHERE class_id = $1 AND user_id = $2", [classId, userId], c);
+    for (const s of ids) await run("INSERT INTO class_subject_teachers (class_id, user_id, subject_id) VALUES ($1, $2, $3)", [classId, userId, s], c);
+    await clearOutsideTeachers(classId, c);
+  });
+}
+
+/** First name is required; the last name may be blank. */
+function cleanNames(input: { firstName: string; lastName: string }) {
+  const first = input.firstName.trim().slice(0, 80);
+  const last = input.lastName.trim().slice(0, 80);
+  if (!first) throw new HttpError(400, "Please type the child’s first name.");
+  return { first, last, full: last ? `${first} ${last}` : first };
+}
+
+/** The three name columns, in the order preferred_name, last_name, legal_name. */
+const sealNames = (n: ReturnType<typeof cleanNames>) => [sealText(n.first, "children.preferred_name"), n.last ? sealText(n.last, "children.last_name") : "", sealText(n.full, "children.legal_name")];
 
 /** A child goes only into a class of their own level, worked out from their birthday. */
 function checkLevel(dateOfBirth: string, year: number, cls: { name: string; level: ClassLevel }) {
@@ -203,26 +254,48 @@ export async function addChild(input: NewChildInput): Promise<{ reviewId: number
   const { termId } = await workspace();
   const cls = await one<{ id: number; name: string; level: ClassLevel }>("SELECT id, name, level FROM classes WHERE id = $1 AND term_id = $2", [input.classId, termId]);
   if (!cls) throw new HttpError(400, "Choose one of this semester's classes.");
-  const clean = input.name.trim().slice(0, 80);
-  if (!clean) throw new HttpError(400, "Please type the child’s name.");
+  const names = cleanNames(input);
   const chinese = input.chineseName.trim().slice(0, 40);
   checkLevel(input.dateOfBirth, await termYear(termId), cls);
+  // What the school keeps about the child (as on their profile): blank parents are dropped, the first day defaults to today.
+  const guardians = (input.guardians ?? []).map((g) => ({ name: g.name.trim(), relationship: g.relationship.trim(), phone: g.phone.trim(), email: g.email.trim() })).filter((g) => g.name || g.phone || g.email);
+  const notes = (input.notes ?? "").trim();
   return tx(async (c) => {
-    // photo_consent stays false: reports use the Peterhouse pattern tile with the initial.
     const child = await one<{ id: number }>(
-      "INSERT INTO children (preferred_name, legal_name, chinese_name, date_of_birth, pronoun, photo_consent) VALUES ($1, $2, $3, $4, $5, false) RETURNING id",
+      `INSERT INTO children (preferred_name, last_name, legal_name, chinese_name, date_of_birth, pronoun, photo_consent, joined_on, guardians, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, false, COALESCE($7::date, CURRENT_DATE), $8, $9) RETURNING id`,
       [
-        sealText(clean, "children.preferred_name"),
-        sealText(clean, "children.legal_name"),
+        ...sealNames(names),
         chinese ? sealText(chinese, "children.chinese_name") : "",
         sealText(input.dateOfBirth, "children.date_of_birth"),
         input.pronoun,
+        input.joinedOn || null,
+        guardians.length ? sealJson(guardians, "children.guardians") : "",
+        notes ? sealText(notes, "children.notes") : "",
       ],
       c,
     );
-    // The questions are frozen when the review is first opened, not now.
-    const review = await one<{ id: number }>("INSERT INTO reviews (child_id, term_id, class_id, status) VALUES ($1, $2, $3, 'draft') RETURNING id", [child!.id, termId, cls.id], c);
-    return { reviewId: review!.id, childId: child!.id };
+    // A child only has reports for semesters that had not finished when they joined: someone who joined in October has
+    // no Semester 1 report. The questions are frozen when the review is first opened, not now.
+    const joined = (await one<{ d: string }>("SELECT joined_on::text AS d FROM children WHERE id = $1", [child!.id], c))!.d;
+    const endOf = (t: string) => `make_date(${t}.year, ${t}.semester * 6, CASE ${t}.semester WHEN 1 THEN 30 ELSE 31 END) >= $2::date`;
+    const here = await one<{ id: number }>(
+      `INSERT INTO reviews (child_id, term_id, class_id, status) SELECT $1::bigint, t.id, $3::bigint, 'draft' FROM terms t WHERE t.id = $4 AND ${endOf("t")} RETURNING id`,
+      [child!.id, joined, cls.id, termId],
+      c,
+    );
+    // Added while an earlier semester is open: the child is just as much in the later ones, in the class of the same name and level.
+    const later = await many<{ id: number }>(
+      `INSERT INTO reviews (child_id, term_id, class_id, status)
+       SELECT $1::bigint, lt.id, lk.id, 'draft' FROM terms t, terms lt JOIN classes lk ON lk.term_id = lt.id
+        WHERE t.id = $3 AND (lt.year, lt.semester) > (t.year, t.semester) AND lk.name = $4 AND lk.level = $5 AND ${endOf("lt")}
+        ORDER BY lt.year, lt.semester RETURNING id`,
+      [child!.id, joined, termId, cls.name, cls.level],
+      c,
+    );
+    const first = here ?? later[0];
+    if (!first) throw new HttpError(409, "That first day is after every semester this class has, so the child has no report to write yet.");
+    return { reviewId: first.id, childId: child!.id };
   });
 }
 
@@ -257,17 +330,15 @@ export async function moveChild(reviewId: number, classId: number) {
  * Corrects a child's details. A new birthday must still fit their class; when it gives another level, `classId` names
  * the class of that level they move to at the same time.
  */
-export async function updateChild(reviewId: number, input: { name: string; chineseName: string; dateOfBirth: string; pronoun: Pronoun }, classId?: number) {
+export async function updateChild(reviewId: number, input: { firstName: string; lastName: string; chineseName: string; dateOfBirth: string; pronoun: Pronoun }, classId?: number) {
   const r = await currentReview(reviewId);
-  const clean = input.name.trim().slice(0, 80);
-  if (!clean) throw new HttpError(400, "Please type the child’s name.");
+  const names = cleanNames(input);
   const chinese = input.chineseName.trim().slice(0, 40);
   const cls = await termClass(classId ?? r.class_id, r.term_id);
   checkLevel(input.dateOfBirth, await termYear(r.term_id), cls);
   await tx(async (c) => {
-    await run("UPDATE children SET preferred_name = $1, legal_name = $2, chinese_name = $3, date_of_birth = $4, pronoun = $5 WHERE id = $6", [
-      sealText(clean, "children.preferred_name"),
-      sealText(clean, "children.legal_name"),
+    await run("UPDATE children SET preferred_name = $1, last_name = $2, legal_name = $3, chinese_name = $4, date_of_birth = $5, pronoun = $6 WHERE id = $7", [
+      ...sealNames(names),
       chinese ? sealText(chinese, "children.chinese_name") : "",
       sealText(input.dateOfBirth, "children.date_of_birth"),
       input.pronoun,

@@ -78,6 +78,8 @@ export async function renderReportPdf(reviewId: number, sessionToken: string): P
     const res = await page.goto(`${origin}/report/${reviewId}`, { waitUntil: "networkidle0", timeout: 60_000 });
     if (!res || !res.ok()) throw new Error(`The report page could not be opened (${res?.status()}).`);
     await page.evaluate(() => document.fonts.ready);
+    // Each teachers' note sizes its words to fill its box once the fonts are in.
+    await page.waitForFunction(() => !document.querySelector('[data-fit="pending"]'), { timeout: 5_000 }).catch(() => {});
     const pdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
     return Buffer.from(pdf);
   } finally {

@@ -88,12 +88,13 @@ Every change is to the draft, so each message ends with "Teachers see it once yo
 
 | Action | Success | If it fails | Kind |
 |---|---|---|---|
-| Add a question | "Question added." | "Put {name} where the child's name goes…" / "English already has 6 questions, the most allowed." | Pop-up and beside the control |
+| Add a question (with its levels) | "Question added." | "Put {name} where the child's name goes…" / "English already has 6 questions for K2, the most allowed. Retire one for K2 first." / "Choose at least one level for this question." | Pop-up and beside the control |
 | Change the wording | "Wording changed." Or, when it measures something new: "Saved as a new question." | "Keep a question under … characters." | Pop-up and beside the control |
 | Move up or down | "Moved up." / "Moved down." | (server reason) | Pop-up |
 | Retire a question | "Question retired. Past reports keep it; new reviews will not ask it." | "English needs at least 3 questions. Add another before retiring this one." | Pop-up and beside the control |
 | Bring a question back | "Question brought back." | "English already has 6 questions. Retire one first." | Pop-up and beside the control |
 | Save the short-answer question or home ideas | "Question saved." / "Home ideas saved." | "Keep at least one idea to try at home." | Pop-up and beside the control |
+| Change a question's levels (tap a level chip) | "Asked at N1, N2, K1, K2. Teachers see it once you publish." | "Mathematics needs at least 3 questions for PG. Add another for PG first." / "English already has 6 questions for K2, the most allowed." / "Choose at least one level. To stop asking it altogether, retire the question." | Pop-up and beside the control |
 | Discard changes | Confirm box first. Then "Changes discarded. The draft is back to the published questions." | (server reason) | Confirm box, then pop-up |
 | Publish | "Version 4 published. New reviews use it from now on." | "There are no changes to publish." / what still needs fixing | Pop-up and on the page |
 
@@ -112,6 +113,43 @@ Every change is to the draft, so each message ends with "Teachers see it once yo
 | Download PDF before approval | Everyone | "The PDF for families can be downloaded once the report is approved." | n/a | Pop-up |
 | Change ratings, photos or wording while locked | Everyone | A note at the top says why: "This report is waiting for review. Take it back to change something." / "An administrator has taken this report over…" / "This report is approved. An administrator can send it back…" Tapping a rating repeats it as a pop-up. | n/a | On the page and pop-up |
 | Start next semester with reports not approved | Admin | "3 reports are not approved yet: 1 waiting for review, 2 not sent yet. If you start the next semester now they stay as they are, and families cannot get those PDFs." | n/a | On the page |
+| Approvals with nothing waiting | Admin | "All caught up. Nothing is waiting. Reports appear here when a teacher sends one for review." With a link: "See the 2 not sent yet". | n/a | On the page |
+| Search Approvals with no match | Admin | "No one matches. Try a different name or clear the filters." | n/a | On the page |
+
+---
+
+## Calendar (change 5)
+
+| Action | Who | Success | If it fails | Kind |
+|---|---|---|---|---|
+| Add an entry | Admin | "“Sports Day” added for the whole school on 14 Nov." (or for K1 and K2, or for the classes chosen) | "Give the entry a title." / "The end date is before the start date." / "Give both a start and an end time, or neither for all day." / "Choose at least one level." / "Choose at least one class." | Dialog, then pop-up |
+| Change an entry | Admin | "“Sports Day” saved." | Same as Add | Dialog, then pop-up |
+| Remove an entry | Admin | Confirm box: "Remove “Sports Day”? It disappears from the app and from everyone’s linked calendar the next time it refreshes." Then "“Sports Day” removed." | (server reason) | Confirm box, then pop-up |
+| Copy calendar link | Everyone | "Link copied. Paste it where your calendar app asks to subscribe by URL." | n/a | Pop-up |
+| Reset calendar link | Everyone | Confirm box: "Reset your calendar link? … The old link stops working at once…" Then "New link ready. Add it to your calendar again; the old one has stopped working." | "The link could not be reset." | Confirm box, then pop-up |
+| Calendar on this computer | Everyone | "This copy runs on this computer, so Google and Outlook cannot reach it. The buttons work on the school’s server." | n/a | On the page |
+| An old or wrong calendar link | Google / Outlook | The link answers "This calendar link is not valid. Open Calendar in the Learning Review for your current link." | n/a | (in the calendar app) |
+| Nothing coming up | Teacher | "Nothing special in the next seven days." on the Class page | n/a | On the page |
+
+---
+
+## Subjects and timetable (change 7)
+
+| Action | Who | Success | If it fails | Kind |
+|---|---|---|---|---|
+| Add a subject | Admin | "Music added. Add it to a class on the Timetable page." | "There is already a subject with that name." / "Give the subject a name." | Pop-up |
+| Save a subject | Admin | "Music saved." | Same as above | Pop-up |
+| Hide / show a subject | Admin | "Music is hidden. It stays on today’s timetables but cannot be added to new lessons." / "Music can be added to lessons again." | (server reason) | Pop-up |
+| Remove a subject | Admin | Confirm box: "Remove Music? It is on no timetable, so nothing else changes." Then "Music removed." | "This subject is on a timetable. Hide it instead, or remove its lessons first." | Confirm box, then pop-up |
+| Add or change a lesson | Admin, subject teacher | "Maths added: Wednesday, 10:30–11:15." / "Maths saved: …" | "It overlaps English (9:00–9:45) in this class." / "Times go in 5-minute steps, like 9:05 or 9:10." / "The lesson ends before it starts." / "You can change only your own lessons of the subjects you teach in this class. Ask the administrator for anything else." | Dialog, then pop-up |
+| Teacher booked twice | Admin | The lesson is saved, then a warning: "This teacher is also teaching K1 Rainbow then (9:00–9:45)." | n/a | Pop-up (warning) |
+| Remove a lesson | Admin, subject teacher | Confirm box: "Remove this Maths lesson? Wednesday, 10:30–11:15, every week." (for a subject teacher: "If it is your last lesson in this class, you stop seeing its children.") Then "Maths on Wednesday removed." | (server reason) | Confirm box, then pop-up |
+| Copy a timetable | Admin | "Copied to K1 Rainbow, K1 Star." | "Choose at least one other class." | Dialog, then pop-up |
+| Rate an area that is not theirs | Subject teacher | Note at the top: "You teach Chinese 华文 to this class, so you rate Chinese 华文 and can add its photos. The class teachers rate the other areas and write the report." Tapping another area: "You rate Chinese for this class. Its class teachers rate the rest." | n/a | On the page and pop-up |
+| Add a subject teacher | Admin | "george now teaches Maths in MiaoMeow." | "This teacher is already the class's lead or co-teacher, so they teach every subject here." | Dialog, then pop-up |
+| Change a subject teacher's subjects | Admin | "george’s subjects in MiaoMeow are saved." With none ticked, the button reads "Remove from class". | "Choose subjects from the school's subject list." | Dialog, then pop-up |
+| Remove a subject teacher | Admin | "george removed from MiaoMeow. Their lessons here now have no teacher." | n/a | Pop-up |
+| Name someone outside the class on a lesson | Admin | n/a | "Choose one of this class's teachers. Add a subject teacher to the class on its Classes page first." | Pop-up |
 
 ---
 
@@ -121,6 +159,4 @@ These will be added when their change is built (see `CHANGES-TO-MAKE.md`).
 
 | Change | Action | Planned message |
 |---|---|---|
-| 5 | Calendar: add, change or remove an event | "Sports Day added for the whole school." / "Changes saved." / "Sports Day removed." |
 | Now (lead and co-teachers) | Two teachers change the same area of a child at the same time | Today the later save wins with no warning. Planned: "Ms Tan changed English for Mia a moment ago. Reload to see her answers before you change them." Not built yet: it needs the server to notice the clash, which none of the five changes covered. |
-| 5 | Calendar: reset my calendar link | Confirm box: "Reset your calendar link? The old link stops working." Then "New link ready. Add it to your calendar again." |

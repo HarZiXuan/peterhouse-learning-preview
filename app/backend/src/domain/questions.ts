@@ -5,8 +5,8 @@
 // never change a past or in-progress report. Question keys are permanent: rewording keeps the key (scores still
 // compare across semesters), a different skill gets a new key (no misleading comparison).
 
-import type { Area, AuditEntry, DraftDomain, QuestionBankView, QuestionChange, Rubric, SessionUser } from "@peterhouse/shared";
-import { DEFAULT_RUBRIC, NEVER_USE, QUESTIONS_MAX, QUESTIONS_MIN, SCALE, normaliseRubric } from "@peterhouse/shared";
+import type { Area, AuditEntry, ClassLevel, DraftDomain, QuestionBankView, QuestionChange, Rubric, SessionUser } from "@peterhouse/shared";
+import { CLASS_LEVEL_KEYS, DEFAULT_RUBRIC, NEVER_USE, QUESTIONS_MAX, QUESTIONS_MIN, SCALE, askedAt, normaliseRubric } from "@peterhouse/shared";
 import { audit } from "../audit";
 import { many, one, pool, run, tx, type Db } from "../db";
 import { HttpError } from "../http";
@@ -24,7 +24,10 @@ type DomainRow = {
   love_text: string | null;
   home_ideas: string[] | null;
 };
-type QuestionRow = { id: number; domain_id: number; key: string; text_template: string; position: number; active: boolean; retired_at: string | null };
+type QuestionRow = { id: number; domain_id: number; key: string; text_template: string; position: number; active: boolean; retired_at: string | null; levels: ClassLevel[] };
+const Q_COLS = "id, domain_id, key, text_template, position, active, retired_at, levels";
+/** Levels in school order, without repeats; an empty list is refused by the caller. */
+const cleanLevels = (levels: readonly string[]) => CLASS_LEVEL_KEYS.filter((l) => levels.includes(l));
 type VersionRow = { id: number; version: number; snapshot: Rubric; created_at: string; created_by: number | null };
 
 const SEED_LOCK = 7_201_027;
@@ -58,7 +61,7 @@ async function seed() {
           c,
         );
         for (const [j, s] of a.skills.entries()) {
-          await run("INSERT INTO questions (domain_id, key, text_template, position) VALUES ($1, $2, $3, $4)", [d!.id, s.key, s.text, j], c);
+          await run("INSERT INTO questions (domain_id, key, text_template, position, levels) VALUES ($1, $2, $3, $4, $5)", [d!.id, s.key, s.text, j, s.levels ?? CLASS_LEVEL_KEYS], c);
         }
       }
     }
@@ -70,7 +73,7 @@ async function seed() {
 
 async function loadDraft(c: Db = pool) {
   const domains = await many<DomainRow>("SELECT * FROM domains ORDER BY position, id", [], c);
-  const questions = await many<QuestionRow>("SELECT id, domain_id, key, text_template, position, active, retired_at FROM questions ORDER BY position, id", [], c);
+  const questions = await many<QuestionRow>(`SELECT ${Q_COLS} FROM questions ORDER BY position, id`, [], c);
   return { domains, questions };
 }
 
@@ -81,7 +84,7 @@ function toArea(d: DomainRow, qs: QuestionRow[]): Area {
     shortName: d.short_name,
     ...(d.sub_name ? { subName: d.sub_name } : {}),
     ...(d.icon ? { icon: d.icon } : {}),
-    skills: qs.filter((q) => q.domain_id === d.id && q.active).map((q) => ({ key: q.key, text: q.text_template })),
+    skills: qs.filter((q) => q.domain_id === d.id && q.active).map((q) => ({ key: q.key, text: q.text_template, levels: cleanLevels(q.levels) })),
     ...(d.love_key && d.love_text ? { love: { key: d.love_key, text: d.love_text } } : {}),
     ...(d.home_ideas ? { homeIdeas: d.home_ideas } : {}),
   };
@@ -132,8 +135,13 @@ function diff(live: Rubric, draft: Rubric, everPublished: Set<string>): Question
             ? { kind: "restored", areaKey: a.key, areaName: a.name, key: s.key, text: s.text, was: null, effect: "Comes back. Earlier scores for it compare again." }
             : { kind: "added", areaKey: a.key, areaName: a.name, key: s.key, text: s.text, was: null, effect: "New skill. The next report shows no comparison for it." },
         );
-      } else if (was.skill.text !== s.text) {
-        changes.push({ kind: "reworded", areaKey: a.key, areaName: a.name, key: s.key, text: s.text, was: was.skill.text, effect: "Same skill. Earlier scores still compare." });
+      } else {
+        if (was.skill.text !== s.text) {
+          changes.push({ kind: "reworded", areaKey: a.key, areaName: a.name, key: s.key, text: s.text, was: was.skill.text, effect: "Same skill. Earlier scores still compare." });
+        }
+        const before = (was.skill.levels ?? CLASS_LEVEL_KEYS).join(", ");
+        const now = (s.levels ?? CLASS_LEVEL_KEYS).join(", ");
+        if (before !== now) changes.push({ kind: "levels", areaKey: a.key, areaName: a.name, key: s.key, text: s.text, was: before, effect: `Asked at ${now}.` });
       }
     }
     if (la) {
@@ -158,11 +166,15 @@ function diff(live: Rubric, draft: Rubric, everPublished: Set<string>): Question
   return changes;
 }
 
+/** The 3 to 6 questions per area are counted for each level, since each level is asked only its own. */
 function problemsOf(draft: Rubric): string[] {
   const out: string[] = [];
   for (const a of draft.areas) {
-    if (a.skills.length < QUESTIONS_MIN) out.push(`${a.name} has ${a.skills.length} question${a.skills.length === 1 ? "" : "s"}; it needs at least ${QUESTIONS_MIN}.`);
-    if (a.skills.length > QUESTIONS_MAX) out.push(`${a.name} has ${a.skills.length} questions; the most is ${QUESTIONS_MAX}.`);
+    for (const level of CLASS_LEVEL_KEYS) {
+      const n = a.skills.filter((s) => askedAt(s, level)).length;
+      if (n < QUESTIONS_MIN) out.push(`${a.name} has ${n} question${n === 1 ? "" : "s"} for ${level}; it needs at least ${QUESTIONS_MIN}.`);
+      if (n > QUESTIONS_MAX) out.push(`${a.name} has ${n} questions for ${level}; the most is ${QUESTIONS_MAX}.`);
+    }
     for (const s of a.skills) if (!s.text.includes("{name}")) out.push(`${s.key} needs {name} where the child's name goes.`);
     if (a.homeIdeas && a.homeIdeas.length === 0) out.push(`${a.name} needs at least one idea to try at home.`);
   }
@@ -199,11 +211,17 @@ export async function questionBank(): Promise<QuestionBankView> {
       icon: d.icon,
       questions: area.skills.map((s) => {
         const was = liveSkill.get(s.key);
-        return { key: s.key, text: s.text, change: was === undefined ? "added" : was !== s.text ? "reworded" : null, was: was !== undefined && was !== s.text ? was : null };
+        return {
+          key: s.key,
+          text: s.text,
+          levels: s.levels ?? CLASS_LEVEL_KEYS,
+          change: was === undefined ? "added" : was !== s.text ? "reworded" : null,
+          was: was !== undefined && was !== s.text ? was : null,
+        };
       }),
       retired: questions
         .filter((q) => q.domain_id === d.id && !q.active)
-        .map((q) => ({ key: q.key, text: q.text_template, retiredAt: q.retired_at })),
+        .map((q) => ({ key: q.key, text: q.text_template, retiredAt: q.retired_at, levels: cleanLevels(q.levels) })),
       love: area.love ? { ...area.love, was: la?.love && la.love.text !== area.love.text ? la.love.text : null } : null,
       homeIdeas: area.homeIdeas ?? null,
       homeChanged: JSON.stringify(la?.homeIdeas ?? null) !== JSON.stringify(area.homeIdeas ?? null),
@@ -239,13 +257,23 @@ async function domainByKey(c: Db, key: string): Promise<DomainRow> {
 }
 
 async function questionByKey(c: Db, key: string): Promise<QuestionRow> {
-  const q = await one<QuestionRow>("SELECT id, domain_id, key, text_template, position, active, retired_at FROM questions WHERE key = $1", [key], c);
+  const q = await one<QuestionRow>(`SELECT ${Q_COLS} FROM questions WHERE key = $1`, [key], c);
   if (!q) throw new HttpError(404, "That question could not be found.");
   return q;
 }
 
-const activeCount = async (c: Db, domainId: number) =>
-  (await one<{ n: number }>("SELECT count(*)::int AS n FROM questions WHERE domain_id = $1 AND active", [domainId], c))!.n;
+/** How many active questions each level is asked in a domain, leaving out one question when it is being changed. */
+async function levelCounts(c: Db, domainId: number, except?: number): Promise<Record<ClassLevel, number>> {
+  const rows = await many<{ levels: ClassLevel[] }>("SELECT levels FROM questions WHERE domain_id = $1 AND active AND id <> coalesce($2, 0)", [domainId, except ?? null], c);
+  return Object.fromEntries(CLASS_LEVEL_KEYS.map((l) => [l, rows.filter((r) => r.levels.includes(l)).length])) as Record<ClassLevel, number>;
+}
+
+/** Refuses a new question for a level that already has the most questions allowed. */
+async function checkRoomFor(c: Db, d: DomainRow, levels: ClassLevel[]) {
+  const counts = await levelCounts(c, d.id);
+  const full = levels.find((l) => counts[l] >= QUESTIONS_MAX);
+  if (full) throw new HttpError(400, `${d.name} already has ${QUESTIONS_MAX} questions for ${full}, the most allowed. Retire one for ${full} first.`);
+}
 
 /** The next unused key in a domain: mat_5 after mat_1…mat_4, never reusing a retired one. */
 async function nextKey(c: Db, d: DomainRow): Promise<string> {
@@ -259,13 +287,15 @@ async function nextKey(c: Db, d: DomainRow): Promise<string> {
 const nextPosition = async (c: Db, domainId: number) =>
   (await one<{ p: number }>("SELECT COALESCE(max(position), -1) + 1 AS p FROM questions WHERE domain_id = $1", [domainId], c))!.p;
 
-export async function addQuestion(req: Request, user: SessionUser, areaKey: string, text: string): Promise<string> {
+export async function addQuestion(req: Request, user: SessionUser, areaKey: string, text: string, levels: readonly string[] = CLASS_LEVEL_KEYS): Promise<string> {
   const clean = cleanText(text);
+  const lv = cleanLevels(levels);
+  if (!lv.length) throw new HttpError(400, "Choose at least one level for this question.");
   return tx(async (c) => {
     const d = await domainByKey(c, areaKey);
-    if ((await activeCount(c, d.id)) >= QUESTIONS_MAX) throw new HttpError(400, `${d.name} already has ${QUESTIONS_MAX} questions, the most allowed.`);
+    await checkRoomFor(c, d, lv);
     const key = await nextKey(c, d);
-    await run("INSERT INTO questions (domain_id, key, text_template, position) VALUES ($1, $2, $3, $4)", [d.id, key, clean, await nextPosition(c, d.id)], c);
+    await run("INSERT INTO questions (domain_id, key, text_template, position, levels) VALUES ($1, $2, $3, $4, $5)", [d.id, key, clean, await nextPosition(c, d.id), lv], c);
     await audit(req, user.id, "questions.added", { detail: key }, c);
     return key;
   });
@@ -291,7 +321,7 @@ export async function rewordQuestion(req: Request, user: SessionUser, key: strin
     const d = (await one<DomainRow>("SELECT * FROM domains WHERE id = $1", [q.domain_id], c))!;
     const newKey = await nextKey(c, d);
     await run("UPDATE questions SET active = false, retired_at = now() WHERE id = $1", [q.id], c);
-    await run("INSERT INTO questions (domain_id, key, text_template, position) VALUES ($1, $2, $3, $4)", [d.id, newKey, clean, q.position], c);
+    await run("INSERT INTO questions (domain_id, key, text_template, position, levels) VALUES ($1, $2, $3, $4, $5)", [d.id, newKey, clean, q.position, q.levels], c);
     await audit(req, user.id, "questions.replaced", { detail: `${key} → ${newKey}` }, c);
     return newKey;
   });
@@ -302,9 +332,9 @@ export async function retireQuestion(req: Request, user: SessionUser, key: strin
     const q = await questionByKey(c, key);
     if (!q.active) return;
     const d = (await one<DomainRow>("SELECT * FROM domains WHERE id = $1", [q.domain_id], c))!;
-    if ((await activeCount(c, d.id)) <= QUESTIONS_MIN) {
-      throw new HttpError(400, `${d.name} needs at least ${QUESTIONS_MIN} questions. Add another before retiring this one.`);
-    }
+    const counts = await levelCounts(c, d.id, q.id);
+    const short = cleanLevels(q.levels).find((l) => counts[l] < QUESTIONS_MIN);
+    if (short) throw new HttpError(400, `${d.name} needs at least ${QUESTIONS_MIN} questions for ${short}. Add another for ${short} before retiring this one.`);
     if (!(await everPublishedKeys(c)).has(key)) {
       // Never reached a review, so there is no history to keep.
       await run("DELETE FROM questions WHERE id = $1", [q.id], c);
@@ -321,16 +351,37 @@ export async function restoreQuestion(req: Request, user: SessionUser, key: stri
     const q = await questionByKey(c, key);
     if (q.active) return;
     const d = (await one<DomainRow>("SELECT * FROM domains WHERE id = $1", [q.domain_id], c))!;
-    if ((await activeCount(c, d.id)) >= QUESTIONS_MAX) throw new HttpError(400, `${d.name} already has ${QUESTIONS_MAX} questions. Retire one first.`);
+    const counts = await levelCounts(c, d.id);
+    const full = cleanLevels(q.levels).find((l) => counts[l] >= QUESTIONS_MAX);
+    if (full) throw new HttpError(400, `${d.name} already has ${QUESTIONS_MAX} questions for ${full}. Retire one first.`);
     await run("UPDATE questions SET active = true, retired_at = NULL, position = $1 WHERE id = $2", [await nextPosition(c, d.id), q.id], c);
     await audit(req, user.id, "questions.restored", { detail: key }, c);
+  });
+}
+
+/** Changes which levels a question is asked at. Each level keeps 3 to 6 questions in the area. */
+export async function setQuestionLevels(req: Request, user: SessionUser, key: string, levels: readonly string[]) {
+  const lv = cleanLevels(levels);
+  if (!lv.length) throw new HttpError(400, "Choose at least one level. To stop asking it altogether, retire the question.");
+  await tx(async (c) => {
+    const q = await questionByKey(c, key);
+    if (!q.active) throw new HttpError(400, "Restore this question before changing it.");
+    const d = (await one<DomainRow>("SELECT * FROM domains WHERE id = $1", [q.domain_id], c))!;
+    const counts = await levelCounts(c, d.id, q.id);
+    for (const l of CLASS_LEVEL_KEYS) {
+      const n = counts[l] + (lv.includes(l) ? 1 : 0);
+      if (n > QUESTIONS_MAX) throw new HttpError(400, `${d.name} already has ${QUESTIONS_MAX} questions for ${l}, the most allowed.`);
+      if (n < QUESTIONS_MIN && q.levels.includes(l)) throw new HttpError(400, `${d.name} needs at least ${QUESTIONS_MIN} questions for ${l}. Add another for ${l} first.`);
+    }
+    await run("UPDATE questions SET levels = $1 WHERE id = $2", [lv, q.id], c);
+    await audit(req, user.id, "questions.levels_changed", { detail: `${key}: ${lv.join(", ")}` }, c);
   });
 }
 
 export async function moveQuestion(req: Request, user: SessionUser, key: string, direction: "up" | "down") {
   await tx(async (c) => {
     const q = await questionByKey(c, key);
-    const list = await many<QuestionRow>("SELECT id, domain_id, key, text_template, position, active, retired_at FROM questions WHERE domain_id = $1 AND active ORDER BY position, id", [q.domain_id], c);
+    const list = await many<QuestionRow>(`SELECT ${Q_COLS} FROM questions WHERE domain_id = $1 AND active ORDER BY position, id`, [q.domain_id], c);
     const i = list.findIndex((x) => x.id === q.id);
     const j = direction === "up" ? i - 1 : i + 1;
     if (i < 0 || j < 0 || j >= list.length) return;
@@ -372,7 +423,7 @@ export async function discardDraft(req: Request, user: SessionUser) {
       await run("UPDATE domains SET love_text = $1, home_ideas = $2::jsonb WHERE id = $3", [a.love?.text ?? d.love_text, a.homeIdeas ? JSON.stringify(a.homeIdeas) : d.home_ideas ? JSON.stringify(d.home_ideas) : null, d.id], c);
       for (const [p, s] of a.skills.entries()) {
         liveKeys.add(s.key);
-        await run("UPDATE questions SET text_template = $1, position = $2, active = true, retired_at = NULL WHERE key = $3", [s.text, p, s.key], c);
+        await run("UPDATE questions SET text_template = $1, position = $2, active = true, retired_at = NULL, levels = $4 WHERE key = $3", [s.text, p, s.key, s.levels ?? CLASS_LEVEL_KEYS], c);
       }
     }
     for (const q of await many<{ id: number; key: string; active: boolean }>("SELECT id, key, active FROM questions", [], c)) {

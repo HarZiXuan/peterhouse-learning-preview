@@ -278,7 +278,7 @@ Each class belongs to one level. A level can have several classes, for example K
 
 ## 5. Class calendar
 
-Status: **Agreed**
+Status: **Built** (21 Oct 2026)
 
 A calendar that shows what is coming up for each class. **Admin manages it; teachers can only see it.** It is for staff
 only; families do not see it.
@@ -347,12 +347,38 @@ Mon 10        Tue 11          Wed 12         Thu 13           Fri 14
 3. **Reminders through Google Calendar or Outlook,** using the calendar link above. No emails from this system.
 4. **Teachers cannot propose events** for now. Admin only. This may be added later.
 5. **Link to Google Calendar and Outlook** (a calendar link that stays up to date), not a one-off download.
+6. **The calendar link carries the events, closures and report deadlines, not the weekly hours** (decided while
+   building). Hours every school day would fill everyone's own calendar; they show in the app's Week view instead.
+7. **On phones, Questions and People leave the bottom bar** (decided while building), so it fits five buttons with
+   Calendar added. Both stay in the desktop sidebar and on Settings.
+
+### What was built
+
+- **Calendar in the menu** for everyone. Three views: **Upcoming** (the next four weeks as a list, with "in 5 days"
+  beside a report deadline), **Week** (Monday to Friday, plus a weekend day only when something is on, with each class's
+  hours; no hours on a closed day) and **Month** (a grid; on a phone, a list). A teacher in two classes sees each class's
+  hours in its own colour, and anyone with several classes can narrow it to one.
+- **Teacher's Class page:** "Coming up this week", for example "Tomorrow: Library visit, 9:00 · Bishan Library" and
+  "Monday: Reports due: December reports · 5 days left".
+- **Administrator:** **Add an entry** (Event, School closed or Report deadline; dates, all day or times, place, note,
+  and who it is for: whole school, some levels or some classes). Clicking any entry opens it to change or remove it.
+  A closure is always for the whole school. (The hours-only **Timetables** tab built here was replaced by change 7:
+  a class's hours now come from its lessons.)
+- **Calendar link:** **Add to Google Calendar**, **Add to Outlook**, **Copy link** and **Reset link** (confirm box).
+  Each link shows only what that person can see. Deactivating someone stops their link for good; resetting stops the
+  old one at once. Times are sent in Singapore time. On this computer (localhost) the page says Google and Outlook
+  cannot reach it; on the school's server they can.
+- **New semester:** each class keeps its hours and its class entries.
+- **Activity log:** entries added, changed and removed, timetables set, links reset (never the entry's wording).
+- Code: `app/backend/db/migrations/0005_calendar.sql`, `app/backend/src/domain/calendar.ts`,
+  `app/backend/src/routes/calendar.ts`, `app/frontend/src/app/(staff)/calendar/`, `app/frontend/src/lib/calendar.ts`.
+  Tests: `app/backend/tests/calendar.test.ts`.
 
 ---
 
 ## 6. Show the semester less
 
-Status: **Agreed** (21 Oct 2026)
+Status: **Built** (21 Oct 2026)
 
 Peterhouse keeps **two learning reports a year**, so the semester stays in the system: it dates each report, lets the
 December report show June's ratings beside the new ones, keeps each half-year as a record, and moves classes up a level
@@ -364,3 +390,431 @@ in January. What changes is how often staff see it.
   Approvals, Settings → Report details, Start next semester, and the report itself.
 - **On the report families read:** "↑ since June" and "June: Regularly" instead of "since Semester 1".
 - Nothing changes underneath: the same two periods (January to June, July to December) and the same rules.
+
+---
+
+## 7. Subject timetable
+
+Status: **Built** (21 Oct 2026)
+
+Each class has a **fixed weekly timetable of subjects**: which subject, on which day, at what time. It repeats every
+week of the semester. The administrator manages it; teachers see it. This replaces the "days and hours only"
+timetable of change 5: a class's hours become its first lesson to its last.
+
+### Subjects (admin)
+
+- A **subject list** the administrator manages: name and colour, for example English, Chinese 华文, Mathematics,
+  Circle time, Outdoor play, Music, Art, Snack.
+- A subject can be **linked to a learning area** (English, Chinese, Maths, Social-Emotional, Self-Enrichment), so the
+  timetable and the learning reviews use the same words. Others (Snack, Outdoor play) are not rated.
+- A subject in use cannot be deleted, only hidden from new timetables.
+
+### A class's weekly timetable (admin)
+
+- A **week grid** for each class: Monday to Friday (Saturday if needed) down the side, time across, one block per
+  lesson. Each block: subject, start and end time, and optionally the teacher and the room.
+- **Rules:** lessons in one class cannot overlap; a teacher cannot be in two classes at the same time (warning).
+- **Copy to other classes:** "Copy K1 Sunflower's timetable to K1 Rainbow", since classes of a level are often the same.
+- **New semester:** the timetable carries over with the class, like its teachers.
+
+### What staff see
+
+- **Calendar → Week:** each day lists that class's lessons in order ("9:00 English · 9:45 Chinese · 10:30 Snack…"),
+  with events beside them. On a closed day, no lessons.
+- **A Timetable view** in Calendar: the class's week as a grid, the way a printed timetable looks. Layout to follow:
+  the shadcn "Class timetable" block (http://shadcn.io/blocks/calendar-class-timetable), in Peterhouse's light theme.
+
+  ```
+  K1 Sunflower timetable                                    ‹  This week  ›   [K1 Sunflower ▾]
+  ───────────────────────────────────────────────────────────────────────────────────────────
+             Mon            Tue            Wed            Thu            Fri
+   8:30   Circle time    Circle time    Circle time    Circle time    Circle time
+   9:00   English        Chinese 华文    English        Chinese 华文    Maths
+          Room 2         Room 2         Room 2         Room 2         Room 2
+   9:45   Snack          Snack          Snack          Snack          Snack
+  10:15   Maths          Outdoor play   Music          Maths          Art
+  ───────────────────────────────────────────────────────────────────────────────────────────
+  English · Room 2 · Ms Lim                                              (the lesson you tapped)
+  ```
+
+  - Days across the top, times down the side, one coloured block per lesson with the subject and room.
+  - Each subject keeps its own soft colour everywhere (a tint, with dark text so it stays readable).
+  - Tapping a block shows its details underneath: subject, room, teacher. For the administrator, tapping opens it to
+    change it, and tapping an empty slot adds a lesson there.
+  - ‹ › moves week to week, so a closed day or an event shows on the right week.
+  - On a phone the grid becomes one day at a time, with Mon–Fri tabs.
+- **Teacher's Class page:** "Today" under "Coming up this week", for example "Now: Chinese until 10:30 · Next: Snack".
+
+### Decided
+
+1. **Subjects to start with: English, Chinese 华文, Maths and Happy Hour.** The school manages the list itself in the
+   app (add, rename, recolour, hide), so this is only the start. English, Chinese and Maths are linked to their learning
+   areas. Social-Emotional and Self-Enrichment are not timetabled subjects; they stay as rated areas in the review.
+2. **Subject teachers exist and manage their own lessons.** A lesson names its teacher. A teacher who teaches a
+   subject in a class:
+   - sees that class and its children (calendar, timetable, child list);
+   - **rates and comments only their subject's area** (the Chinese teacher rates Chinese) and can add photos for it;
+   - **adds, moves and removes their own lessons** of that subject in that class. Only the administrator puts a
+     teacher on a class's timetable in the first place, so nobody can give themselves access to other children.
+   The class's lead and co-teachers still rate the other areas, write the report and submit it.
+3. **One timetable per class**, with "copy to other classes".
+4. **Lessons stay out of the personal calendar link.** The app shows them.
+5. **Any time in 5-minute steps**, not fixed blocks.
+
+### What was built
+
+- **Settings → Subjects** (admin): the subject list with name, colour and the learning area it is rated in ("Not
+  rated" for Happy Hour). Add, rename, recolour, hide; remove only when no lesson uses it. Starts with English,
+  Chinese 华文, Maths and Happy Hour.
+- **Timetable page** (everyone; its own menu item, apart from Calendar, which is for events, closures and deadlines):
+  one class's week as a drag-and-drop grid: days across, hours down, class chips on top, a subject list beside it.
+  Drag across empty hours or drag a subject onto the week to add a one-hour lesson; drag a lesson to move it, drag its
+  bottom edge to resize; overlaps are refused. Click a lesson to change its subject, teacher or room (saved as you go,
+  with Undo). It is the same every week, so there are no week arrows. On a phone, one day at a time with Mon–Fri tabs
+  and a tap-to-add row for each free hour. `/calendar?view=timetable` redirects here.
+- **Editing lessons:** the administrator adds a lesson (button, or the + in an empty slot), changes or removes one,
+  and **copies a timetable to other classes**. A subject teacher adds, moves and removes their own lessons of their
+  subject in that class. Overlaps in a class are refused ("It overlaps English (9:00–9:45) in this class."); a teacher
+  booked in two classes at once is allowed with a warning.
+- **Calendar → Week:** with one class in view, each day lists its lessons ("9:00 English · 9:45 Chinese…"); with
+  several, each class's hours (first lesson to last).
+- **Teacher's Class page:** "Now: English until 9:45 · Next: Chinese 华文, 9:45 · Room 2".
+- **Subject teachers in reviews:** they see the class's children, rate only their subject's area (and add its photos),
+  and are told so at the top of the form. They cannot write or submit the report. People and sign-ins lists their
+  classes as, for example, "K1 Sunflower (Chinese 华文)".
+- **New semester:** each class keeps its lessons.
+- **Activity log:** lessons added, changed, removed and copied; subjects added, changed and removed.
+- Code: `app/backend/db/migrations/0006_subject_timetable.sql`, `app/backend/src/domain/timetable.ts`,
+  `app/backend/src/routes/timetable.ts`, `app/frontend/src/app/(staff)/calendar/TimetableGrid.tsx`,
+  `app/frontend/src/app/(staff)/settings/subjects/`. Tests: `app/backend/tests/timetable.test.ts`.
+
+---
+
+## 8. Different review questions for different ages
+
+Status: **Built** (21 Oct 2026). Live once an administrator publishes the questions (see below).
+
+(Written in another session as "change 6" on 21 Oct 2026; restored here as change 8 because 6 and 7 were
+already used. Wording unchanged.)
+
+Today every child gets the same 16 questions. That does not work across the whole school. A Playgroup child cannot
+"recognise letters" or "count objects one by one", so they would score 1 on most of the form, and families would read that
+as "behind" when it is normal for the age. After this change the questions depend on the child's level (change 4).
+
+### What Singapore's official guidance says
+
+- **Birth to 3 years: [ECDA Early Years Development Framework (EYDF) 2023](https://www.ecda.gov.sg/early-childhood-educators-(ece)/curriculum-frameworks/early-years-development-framework).**
+  Four areas: Cognitive, Communication and Language, Physical, and Social and Emotional. Each area has developmental goals
+  with example behaviours for "Toddlers (18 months to below 4 years)". The examples are there so educators can observe
+  and document. The framework warns that children develop at very different rates and timing, and it gives no numeric scale.
+- **Ages 4 to 6: [MOE Nurturing Early Learners (NEL) Framework 2022](https://nel.moe.edu.sg/the-nel-framework/overview/).**
+  Five learning areas: Aesthetics and Creative Expression, Discovery of the World, Health, Safety and Motor Skills,
+  Language and Literacy (English and Mother Tongue), and Numeracy. A separate strand covers values, social-emotional skills
+  and six learning dispositions (perseverance, reflectiveness, appreciation, inventiveness, sense of wonder and curiosity,
+  engagement). The [end-of-preschool outcomes](https://moe.gov.sg/preschool/curriculum) include sharing and playing with
+  others, communicating thoughts and feelings, and being curious.
+- **How children are assessed:** by teachers observing and documenting, using open-ended questions. No formal tests are
+  mentioned. The 1 to 5 scale is Peterhouse's own.
+
+### What could not be confirmed
+
+The detailed age-by-age pages for ages 4 to 6 are in linked PDFs that have not been read (for example "Learning and
+Development of Reading Skills (From Birth to K2)" and the numeracy guides). No Mother Tongue (Chinese) detail was found, so
+the Chinese questions below are the weakest and most need a Peterhouse teacher.
+
+### Two question sets, with a lighter Playgroup version
+
+Singapore's split is at age 4, which fits the school's levels:
+
+| Set | Levels | Based on |
+|---|---|---|
+| A | PG and N1 | EYDF toddler band (18 months to below 4 years) |
+| B | N2, K1, K2 | NEL (ages 4 to 6) |
+
+- **Playgroup is lighter:** 3 questions per area instead of 4, and more weight on photos and short notes than on ratings.
+  "Not seen yet" will be common at this age, and that is fine.
+- **The scale is "how the child is doing for their age".** 3 (Regularly) means typical for the age group. The scale labels
+  stay fixed for everyone (see the existing rule that labels are not editable).
+- **Keep a few shared questions across both sets** (for example "settles into the routine", "joins in music and
+  movement"), so a child moving from N1 to N2 can still be compared on those. Questions that exist in only one set show no
+  comparison, which matches the existing rule that a different skill gets a new question ID.
+- **Reports use growing language for the youngest** ("is beginning to…", "is starting to…") and never rank a child.
+
+### Draft questions (placeholders for a Peterhouse teacher to approve)
+
+Wording is adapted from the EYDF toddler examples and the NEL area descriptions.
+
+| Area | Set A: PG and N1 | Set B: N2, K1, K2 |
+|---|---|---|
+| **English** | {name} follows simple directions, such as putting away a toy. | {name} listens well and responds in a group. |
+| | {name} describes what they are doing in 2 to 3 words. | {name} speaks in clear sentences to share ideas. |
+| | {name} asks for favourite stories, songs or rhymes. | {name} enjoys books and can talk about what happened. |
+| | N1 only: {name} responds to simple "who, what, where" questions. | {name} recognises letters and the sounds they make. |
+| **Chinese** | {name} joins in Chinese songs and rhymes with actions. | {name} understands simple instructions in Chinese. |
+| | {name} says familiar Chinese words. | {name} speaks simple Chinese words and phrases. |
+| | {name} responds to simple Chinese instructions. | {name} joins in Chinese songs, rhymes and stories. |
+| | | {name} recognises some familiar Chinese characters. |
+| **Mathematics** | {name} sorts, stacks and fits objects together. | {name} counts objects one by one accurately. |
+| | {name} notices "more" and "bigger". | {name} compares size and amount. |
+| | {name} finds a hidden object under 2 or 3 covers. | {name} names basic shapes and spots them around the room. |
+| | | {name} sorts things and notices simple patterns. |
+| **Social-Emotional** | {name} settles into the routine happily. | {name} settles into the class routine happily. |
+| | {name} shows feelings and takes comfort from adults. | {name} can say how {he/she/they} feels. |
+| | {name} plays alongside friends and begins to take turns. | {name} shares and takes turns with friends. |
+| | | {name} shows kindness and cares for others. |
+| **Self-Enrichment** | {name} moves to music and action songs. | {name} joins in music and movement. |
+| | {name} explores messy play, paint and play dough. | {name} enjoys art and making things. |
+| | {name} is active outdoors: climbs, runs and kicks a ball. | {name} joins in active outdoor play. |
+
+**Gap to decide:** NEL treats Discovery of the World (curiosity, asking why, exploring) and learning dispositions as core,
+and the current five areas have no clear home for them. Suggested: add one curiosity question to Self-Enrichment, for
+example "{name} asks why and explores new things", rather than a sixth area.
+
+### What changes in the system
+
+- Each question set is a rubric for a level group, under the same five areas. Question IDs stay permanent, and shared
+  questions use the same ID in both sets.
+- When a review is opened, the set is chosen from the child's level and frozen (the existing `rubric_version` rule).
+- The admin question editor gets a level switcher (PG and N1, N2 to K2) above the area list. Limits per area stay at
+  3 to 6 questions.
+- A child who moves up a level at the start of a new year (change 4) gets the new set. Their old reviews keep the old set.
+- The AI writer is told the child's level, so it chooses age-appropriate wording and never compares a child to others.
+
+### Changes to this proposal (agreed 21 Oct 2026)
+
+1. **Questions are stored per level, not as two sets.** One question list; each question is ticked for the levels it
+   applies to (PG, N1, N2, K1, K2). The editor shows the two sets as views (Set A: PG and N1; Set B: N2, K1, K2), but an
+   "N1 only" question is simply ticked for N1, and Playgroup's lighter set is the Set A questions ticked for PG. The 3 to
+   6 questions per area are checked for each level.
+2. **The scale keeps its meaning.** 3 (Regularly) still means "shows it regularly in familiar situations", not "typical
+   for their age". The labels describe what the child does, as the original specification chose, so a teacher never
+   compares children. Age-appropriateness comes from the questions.
+3. **Progress is compared only within the same level.** A question shared by both sets may ask more of an older child,
+   so a child moving from N1 to N2 in January is not compared with their N1 ratings. The December report still compares
+   with the June report of the same year, at the same level.
+
+### Decided
+
+1. **Wording:** the draft questions above go in as placeholders. A Peterhouse teacher approves or changes them on the
+   Questions page; nothing waits for that.
+2. **N1 is in Set A.**
+3. **Playgroup has 3 questions per area.**
+4. **Curiosity goes into Self-Enrichment** as one question for N2, K1 and K2: "{name} asks why and explores new
+   things". No sixth area.
+5. **The same report layout for all levels** (the proposal gave no suggestion; this is the simplest, and can change
+   later).
+6. **PG stays "the year they turn 2"** until the school confirms (as in change 4).
+
+Where a Set A question and a Set B question say nearly the same thing, they are one shared question ticked for every
+level: "settles into the class routine happily", "joins in music and movement", "joins in active outdoor play",
+"understands simple instructions in Chinese", "joins in Chinese songs, rhymes and stories".
+
+### What was built
+
+- **One question list with levels.** Every question carries the levels it is asked at. The starting set is the
+  draft above: Set A questions for PG and N1 (one English question for N1 only), the original questions for N2, K1
+  and K2, the five shared questions for every level, and the curiosity question for N2 to K2. Playgroup has 3
+  questions in every area; N1 has 4 in English; N2 to K2 have 4 in every area.
+- **A review asks only its child's level's questions.** They are copied (frozen) when the review is first opened, with
+  the level noted on the copy.
+- **Questions page:** "All questions · Set A · PG, N1 · Set B · N2, K1, K2" views; five level chips on each question to
+  ask it at a level or not; "3 to 6 questions for each level · PG 3, N1 3, N2 5…" per area (red when out of range); a
+  level picker when adding a question. The 3-to-6 rule is checked per level, so a level can never be left with too
+  few or too many. Moving questions up and down is offered in "All questions" only.
+- **Preview:** a PG / N1 / N2 / K1 / K2 picker shows exactly the form each age group gets.
+- **Publishing:** a change of levels is a change to publish ("Levels · Asked at N2, K1, K2").
+- **"Since last time"** compares only with an earlier report at the same level.
+- **Writing:** the writing service is told the child's age group and to use growing language for PG and N1, and never to
+  compare children. The built-in writer no longer says "inspires friends" about a two-year-old: at PG and N1 the
+  highest ratings read "is growing in confidence here: now…".
+- **Existing data:** the migration tags the original questions and adds the new ones to the **draft**. Nothing reaches a
+  review until an administrator presses **Publish** on the Questions page. Reviews already opened keep their questions.
+- Code: `app/backend/db/migrations/0007_questions_by_level.sql`, `app/shared/src/rubric-default.ts`,
+  `app/backend/src/domain/questions.ts`, `app/frontend/src/app/(staff)/questions/`. Tests: "questions by level" in
+  `app/backend/tests/questions.test.ts`, "asks each age group its own questions" and "writing for the youngest" in
+  `app/backend/tests/calc.test.ts`.
+
+---
+
+## 9. One review page for the administrator
+
+Status: **Built** (21 Oct 2026)
+
+The administrator has two pages that show the same reports. **Reviews** is a card for every child, with filters for
+"Waiting for review", "Changes requested" and "Approved". **Approvals** is a table with tabs for the same statuses. Keep
+Approvals and remove Reviews for the administrator.
+
+### What changes
+
+- **Administrator menu:** Classes, Approvals, Calendar, Questions, People, Settings. Reviews is removed.
+- **`/reviews` for an administrator** goes to Approvals. Old links still work.
+- **Approvals gains what only Reviews had:**
+  - **Search by child name** next to the class and teacher filters.
+  - **Progress on "Not sent yet":** a column showing "12 of 16 rated", "Ready to write" or "Report written", so the
+    administrator can see who is behind before the deadline.
+- **Adding a child** stays on the Classes page, where it already is.
+- **Teachers are not affected.** They keep Class, Reviews and Reports.
+- After "Write report", the sidebar's "all done" link goes to Approvals, as it already does.
+
+### Decisions
+
+1. **"Waiting for review" stays the first tab.** When nothing is waiting, its empty message links to "Not sent yet".
+2. **The tab keeps the name "Not sent yet".**
+
+### What was built
+
+- **Administrator menu:** Classes, Approvals, Calendar, Timetable, Questions, People, Settings.
+- **Old links:** `/reviews` opens "Not sent yet", `/reviews?show=all` opens Approvals, and `/reports` opens "Approved".
+  A child's page highlights Approvals in the menu.
+- **Search by name** sits in one row with the class and teacher filters, and the address keeps it.
+- **"Not sent yet"** shows Student, Class, Class teachers and Progress. Progress is a small bar with "Not started",
+  "12 of 16 rated", "Ready to write" or "Report written". Sorting by Progress puts the furthest behind first.
+- **The sidebar's progress card** links to "Not sent yet" while reports are still to do, and to Approvals once all are
+  written. The administrator's child list and "Add a child" button in the sidebar are gone. Children are added on
+  the Classes page.
+- **Also fixed:** the class and teacher filters, here and on the teacher's board, no longer stretch to full width.
+- Code: `app/frontend/src/app/(staff)/approvals/`, `ClassRail.tsx`, `reviews/page.tsx`, `reports/page.tsx`.
+
+---
+
+## 10. Settings holds only settings
+
+Status: **Built** (21 Oct 2026)
+
+Classes and Questions are pages of their own in the menu, so Settings no longer lists them. People moves the other way:
+it leaves the menu and is reached from Settings only.
+
+- **Settings, for the administrator:** My account, Report details, Subjects, People and sign-ins, Activity log, Start
+  next semester. Search in Settings no longer finds Classes or Questions.
+- **Administrator menu:** Classes, Approvals, Calendar, Timetable, Questions, Settings. On a People page, Settings is
+  highlighted.
+- **Phone bar (administrator):** Classes, Approvals, Calendar, Questions, Settings. Questions used to be reachable on a
+  phone only through Settings; it now has its own place, which People's removal left free. Timetable is still reached from
+  Calendar.
+- Code: `app/frontend/src/app/(staff)/settings/sections.ts`, `ClassRail.tsx`.
+
+---
+
+## 11. Wider question editor and a tidier preview
+
+Status: **Built** (21 Oct 2026)
+
+- **Questions page:** the right-hand Scale labels and Activity column is removed, so the questions use the full width.
+  The scale labels cannot be edited anyway, and they still appear on every rating in the preview and the review form.
+  The questions' history is still in Settings → Activity log.
+- **Publish preview:** the area tabs were the review form's large cards squeezed into half the page, so names were cut
+  off ("Eng…") and "4 questions" wrapped. They are now one-line pills (icon, name, number of questions) that wrap onto a
+  second row. On a phone they scroll sideways, as on the review form.
+- Code: `app/frontend/src/app/(staff)/questions/QuestionsEditor.tsx`, `questions/publish/PublishView.tsx`,
+  `app/frontend/src/app/legacy.css`.
+
+---
+
+## 12. A class's teachers are chosen on the class, not on the timetable
+
+Status: **Built** (21 Oct 2026)
+
+Today, naming a teacher on any lesson quietly gives them that class (change 7). For example, george leads PG Poopy
+Playtime, but being named on one MiaoMeow Maths lesson made MiaoMeow and its children appear on his board. Who teaches a
+class should be decided in one place, the class itself, and the timetable should only offer those people.
+
+### What changes
+
+- **The class page gets a third kind of teacher:** lead, co-teachers, and **subject teachers**, each with the subjects
+  they teach there ("Ms Wong · Chinese"). Only the administrator adds them, as with lead and co-teachers.
+- **The timetable's teacher list shows only the class's teachers.** For a lesson, the list is the lead, the co-teachers,
+  and the subject teachers for that lesson's subject. Anyone else cannot be chosen, and the server refuses them too.
+- **Who sees a class comes only from the class page.** A subject teacher still rates only their subject and cannot
+  write or send the report (as in change 7).
+- **Removing someone from a class** clears them from that class's lessons. The lessons stay, with no teacher named.
+- **Existing lessons:** a lesson whose teacher is not one of the class's teachers keeps its time and subject, but has its
+  teacher cleared. Locally this is george on MiaoMeow's Tuesday Maths.
+
+### Decisions
+
+1. **Subject teachers are kept**, and added on the class page.
+2. **Existing lessons with an outside teacher have the teacher cleared.**
+
+### What was built
+
+- **Class page → Subject teachers** card under Teachers: each subject teacher with their subjects, "Change subjects" and
+  "Remove from class", and "Add a subject teacher" (choose the teacher, tap their subjects, Save). A lead or co-teacher
+  cannot also be a subject teacher of the same class; making a subject teacher a co-teacher replaces their subject place.
+- **Timetable:** a lesson's teacher list shows the class's lead and co-teachers, and the subject teachers of that
+  lesson's subject. Changing a lesson's subject clears a teacher who does not teach the new one. The server refuses
+  anyone else: "Choose one of this class's teachers. Add a subject teacher to the class on its Classes page first."
+- **Who sees a class** (board, children, reviews, calendar, timetable, People list) comes from lead, co-teacher and
+  subject teacher only. A lesson alone never gives anyone a class.
+- **Taking someone off a class** (as lead, co-teacher or subject teacher) clears them from its lessons.
+- **Copying a timetable** to another class leaves off teachers who do not teach that class.
+- **Next semester** copies subject teachers with each class.
+- **Timetable opens on your own class first**, then the classes you teach a subject in.
+- **Existing data:** migration `0008_subject_teachers.sql` cleared george from MiaoMeow's Tuesday Maths lesson, so he
+  now sees only PG Poopy Playtime.
+- Code: `app/backend/src/domain/staff.ts`, `classes.ts` (`setSubjectTeacher`), `timetable.ts`,
+  `app/frontend/src/app/(staff)/classes/[id]/ClassManager.tsx` (`SubjectTeachers`), `timetable/TimetableGrid.tsx`.
+  Tests: `app/backend/tests/timetable.test.ts`.
+
+---
+
+## 13. One Students page for teachers
+
+Status: **Built** (21 Oct 2026)
+
+Teachers had Class, Reviews and Reports in the menu, and all three showed the same children (Everyone, To do, Reports
+ready). They are now one item, **Students**.
+
+- **Teacher menu:** Students, Calendar, Timetable, Settings. The phone bar shows all four.
+- **Students** is the teacher's home: "Coming up this week", then their students with Everyone, To do and Reports ready.
+  Each card's button goes straight to the next step: Start, Continue, Write report, or Open report.
+- **Old links:** `/reviews` opens Students → To do, `/reports` opens Students → Reports ready. The class filter is kept.
+- A child's review and report pages highlight Students. The report's back link reads "← Students".
+- The sidebar's progress card opens To do while reports are left, then Reports ready.
+- Code: `app/frontend/src/app/(staff)/ClassRail.tsx`, `Board.tsx`, `reviews/page.tsx`, `reports/page.tsx`.
+
+---
+
+## 14. Teacher and children tables for the administrator
+
+Status: **Built** (21 Oct 2026)
+
+The administrator sees teachers and children only one class at a time (Classes), or as accounts (Settings → People and
+sign-ins). They need the whole school at a glance, in tables.
+
+### What changes
+
+- **Classes page gets three tabs:** Classes (as now) · Teachers · Children. The menu stays the same.
+- **Teachers table:** one row per teacher.
+  - Columns: name, classes (lead / co-teacher / subject teacher with subjects, e.g. "MiaoMeow · Maths"), number of
+    children, reports written this semester ("3 of 5"), last sign-in.
+  - Filters: search by name, class.
+  - A teacher in no class is flagged "Not in a class". The row opens their class; the account itself is still edited in
+    People and sign-ins.
+- **Children table:** one row per child this semester.
+  - Columns: name (with Chinese name), birthday, level, class, class teachers, report status.
+  - Filters: search by name, level, class, status. Every column sorts, as on Approvals.
+  - Children marked as left can be shown with "Show children who left".
+  - A child whose birthday no longer fits their class's level is flagged, as on the Classes page. The row opens the
+    child's class.
+- **Phone:** the tables scroll sideways, with the name column fixed.
+
+### Decisions
+
+1. **Tabs on the Classes page**, not new menu items.
+2. **A row opens the class.**
+
+### What was built
+
+- **Classes page tabs:** Classes · Teachers · Children, each with its count. The address keeps the tab
+  (`/classes?tab=teachers`).
+- **Teachers:** Teacher, Classes (each a link, with Lead, Co-teacher or the subjects taught), Children, Reports written
+  ("2 of 2"), Last sign-in. Search by name and filter by class. Inactive accounts are not listed. A teacher in no class
+  shows "Not in a class". A note links to Settings → People and sign-ins for accounts.
+- **Children:** Child (with Chinese name), Birthday, Level, Class, Class teachers, Report. Search by name, and filter
+  by level, class and report status. "Show children who left (n)" appears when any have left. A warning sign marks a
+  child whose birthday no longer fits their class's level.
+- **Every column sorts:** the first click sorts ascending, the next descending, the next restores the default order.
+- **A row opens the class** (a teacher's own class first, before one where they only teach a subject).
+- **Phone:** the tables scroll sideways with the name column fixed.
+- Code: `app/frontend/src/app/(staff)/classes/Tables.tsx`, `classes/page.tsx`. The classes view now also returns
+  every child this semester (`ClassesView.pupils`).

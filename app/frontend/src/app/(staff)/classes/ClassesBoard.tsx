@@ -2,9 +2,9 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ChevronDown, Ellipsis, Plus, TriangleAlert } from "lucide-react";
+import { ChevronDown, ChevronRight, Ellipsis, Plus, TriangleAlert } from "lucide-react";
 import type { ClassChild, ClassesView, ClassSummary } from "@peterhouse/shared";
-import { CLASS_LEVELS, LEVEL_PROBLEM_TEXT, classLevel, type ClassLevel } from "@peterhouse/shared";
+import { CLASS_LEVELS, LEVEL_PROBLEM_TEXT, classLevel } from "@peterhouse/shared";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -12,9 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { cn } from "@/lib/utils";
 import { AddChild } from "../AddChild";
 import { NewClass } from "./NewClass";
-import { Meter, TeacherStack, capacityOf, hasTeacher } from "./shared";
-
-type Filter = "all" | "attention" | ClassLevel;
+import { LEVEL_COLUMN, Meter, TeacherStack, capacityOf, hasTeacher } from "./shared";
 
 type Item = { key: string; classId: number; label: string; text: ReactNode; action: string };
 
@@ -99,6 +97,16 @@ function AttentionPanel({ items }: { items: Item[] }) {
   );
 }
 
+function Stat({ value, label, hint, tone }: { value: number; label: string; hint: string; tone?: string }) {
+  return (
+    <div className="grid gap-0.5 rounded-2xl border bg-card px-5 pb-3.5 pt-4">
+      <span className={cn("font-heading text-4xl font-bold leading-tight", tone)}>{value}</span>
+      <span className="text-sm font-bold text-foreground/80">{label}</span>
+      <span className="text-[13px] text-muted-foreground">{hint}</span>
+    </div>
+  );
+}
+
 function ClassCard({ k, view, flagged }: { k: ClassSummary; view: ClassesView; flagged: ClassChild[] }) {
   const [dialog, setDialog] = useState<"rename" | "add" | null>(null);
   const cap = capacityOf(k);
@@ -106,16 +114,16 @@ function ClassCard({ k, view, flagged }: { k: ClassSummary; view: ClassesView; f
   const note = flagged.length === 0 ? null : flagged.length === 1 ? (flagged[0].level ? `${flagged[0].name} belongs in ${flagged[0].level}` : `${flagged[0].name}’s birthday needs a check`) : `${flagged.length} children need a level check`;
 
   return (
-    <Card className="relative gap-3.5 p-5 shadow-none transition-[border-color,box-shadow] hover:border-foreground/25 hover:shadow-md">
-      <div className="flex items-start gap-2">
-        <h3 className="flex-1 font-heading text-xl font-semibold leading-tight">
-          <Link href={`/classes/${k.id}`} className="text-foreground outline-none hover:text-foreground after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-[3px] focus-visible:after:ring-ring/50">
+    <Card className="relative gap-3 rounded-[14px] p-3.5 shadow-none transition-[border-color,box-shadow] hover:border-foreground/25 hover:shadow-md">
+      <div className="flex items-start gap-1">
+        <h3 className="flex-1 font-heading text-lg font-semibold leading-tight">
+          <Link href={`/classes/${k.id}`} className="text-foreground outline-none hover:text-foreground after:absolute after:inset-0 after:rounded-[14px] focus-visible:after:ring-[3px] focus-visible:after:ring-ring/50">
             {k.name}
           </Link>
         </h3>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" className="relative z-10 -mr-2 -mt-1 text-muted-foreground" aria-label={`Options for ${k.name}`}>
+            <Button variant="ghost" size="icon-sm" className="relative z-10 -mr-2 -mt-1.5 size-8 text-muted-foreground" aria-label={`Options for ${k.name}`}>
               <Ellipsis />
             </Button>
           </DropdownMenuTrigger>
@@ -126,27 +134,27 @@ function ClassCard({ k, view, flagged }: { k: ClassSummary; view: ClassesView; f
         </DropdownMenu>
       </div>
 
-      <div className="grid gap-2">
-        <div className="flex items-baseline justify-between text-sm">
+      <div className="grid gap-1.5">
+        <div className="flex items-baseline justify-between text-[13.5px]">
           <span>
             <b>{k.children}</b> <span className="text-muted-foreground">{cap.state === "none" ? (k.children === 1 ? "child" : "children") : `of ${k.capacity} places`}</span>
           </span>
-          <span className={cn("text-[13px] font-bold", cap.state === "over" ? "text-destructive" : cap.state === "none" ? "text-warn-foreground" : "text-muted-foreground")}>{cap.label}</span>
+          <span className={cn("text-[12.5px] font-extrabold", cap.state === "over" ? "text-destructive" : cap.state === "none" ? "text-warn-foreground" : "text-muted-foreground")}>{cap.label}</span>
         </div>
         <Meter value={k.children} max={k.capacity} tone={cap.state === "over" ? "over" : "default"} label={`${k.children} of ${k.capacity} places`} />
       </div>
 
-      <div className="flex min-h-14 items-center gap-3 border-t pt-3.5">
+      <div className="flex min-h-12 items-center gap-2.5 border-t pt-3">
         {people.length > 0 ? (
           <>
-            <TeacherStack people={people} />
+            <TeacherStack people={people} size={28} />
             <div className="min-w-0 leading-snug">
-              <p className="truncate text-sm font-semibold">{people[0].name}</p>
-              <p className="truncate text-[13px] text-muted-foreground">{people.length > 1 ? `Lead, with ${k.co.map((c) => c.name).join(", ")}` : "Lead teacher"}</p>
+              <p className="truncate text-[13.5px] font-bold">{people[0].name}</p>
+              <p className="truncate text-xs text-muted-foreground">{people.length > 1 ? `Lead, with ${k.co.map((c) => c.name).join(", ")}` : "Lead teacher"}</p>
             </div>
           </>
         ) : (
-          <Button asChild variant="outline" className="relative z-10 h-10 border-warn/60 bg-warn/10 font-semibold text-warn-foreground hover:bg-warn/20">
+          <Button asChild variant="outline" size="sm" className="relative z-10 h-9 border-warn/60 bg-warn/10 font-bold text-warn-foreground hover:bg-warn/20">
             <Link href={`/classes/${k.id}`}>
               <Plus /> Assign teachers
             </Link>
@@ -155,8 +163,8 @@ function ClassCard({ k, view, flagged }: { k: ClassSummary; view: ClassesView; f
       </div>
 
       {note && (
-        <p className="flex items-center gap-2 rounded-lg bg-warn/10 px-2.5 py-2 text-[13px] font-semibold text-warn-foreground">
-          <TriangleAlert className="size-4 shrink-0" aria-hidden /> {note}
+        <p className="flex items-center gap-1.5 rounded-lg bg-warn/10 px-2.5 py-1.5 text-xs font-bold text-warn-foreground">
+          <TriangleAlert className="size-3.5 shrink-0" aria-hidden /> {note}
         </p>
       )}
 
@@ -166,79 +174,73 @@ function ClassCard({ k, view, flagged }: { k: ClassSummary; view: ClassesView; f
   );
 }
 
-export function ClassesBoard({ view }: { view: ClassesView }) {
-  const [filter, setFilter] = useState<Filter>("all");
-  const items = attentionItems(view);
-  const flaggedClasses = new Set(items.map((i) => i.classId));
-  const shown = view.classes.filter((k) => filter === "all" || (filter === "attention" ? flaggedClasses.has(k.id) : k.level === filter));
+/** One age group: five of these side by side on a wide screen, stacked and collapsible on a phone. */
+function LevelColumn({ lv, classes, view }: { lv: (typeof CLASS_LEVELS)[number]; classes: ClassSummary[]; view: ClassesView }) {
+  const [open, setOpen] = useState(classes.length > 0);
+  const tone = LEVEL_COLUMN[lv.key];
+  const kids = classes.reduce((n, k) => n + k.children, 0);
+  return (
+    <section aria-labelledby={`lv-${lv.key}`} className={cn("min-w-0 rounded-[22px] p-3.5", tone.soft)}>
+      <div className="flex items-center gap-2 px-1 pb-1.5">
+        <div className="grid min-w-0 flex-1 gap-0.5">
+          <h2 id={`lv-${lv.key}`} className={cn("flex flex-wrap items-baseline gap-x-2 font-heading leading-tight", tone.deep)}>
+            <span className="text-[28px] font-bold">{lv.key}</span>
+            <span className="text-sm font-bold">{lv.name}</span>
+          </h2>
+          <p className="text-[12.5px] text-foreground/70">
+            Born {view.year - lv.turns} · turns {lv.turns}
+          </p>
+          <p className={cn("mt-2 w-fit rounded-full px-3 py-0.5 text-[12.5px] font-extrabold", tone.chip, tone.deep)}>{classes.length === 0 ? "No class yet" : `${plural(classes.length, "class", "classes")} · ${plural(kids, "child", "children")}`}</p>
+        </div>
+        <Button type="button" variant="ghost" size="icon" className={cn("size-11 min-[1280px]:hidden", tone.deep)} aria-expanded={open} aria-label={`${open ? "Hide" : "Show"} ${lv.name}`} onClick={() => setOpen((o) => !o)}>
+          <ChevronDown className={cn("transition-transform", open && "rotate-180")} />
+        </Button>
+      </div>
+      <div className={cn("mt-1 grid-cols-[minmax(0,1fr)] gap-2.5", open ? "grid" : "hidden min-[1280px]:grid")}>
+        {classes.map((k) => (
+          <ClassCard key={k.id} k={k} view={view} flagged={view.flagged.filter((p) => p.classId === k.id)} />
+        ))}
+        <NewClass
+          placeholder
+          defaultLevel={lv.key}
+          year={view.year}
+          placeholderClass={cn("rounded-[14px] border-2 bg-transparent font-extrabold hover:text-current", classes.length === 0 ? "min-h-28" : "min-h-12", tone.dash, tone.deep)}
+          placeholderLabel={classes.length === 0 ? `Add the first ${lv.key} class` : `Add a ${lv.key} class`}
+        />
+      </div>
+    </section>
+  );
+}
 
-  const chips: { id: Filter; label: string; count: number; warn?: boolean }[] = [
-    { id: "all", label: "All", count: view.classes.length },
-    ...CLASS_LEVELS.map((l) => ({ id: l.key as Filter, label: l.key, count: view.classes.filter((k) => k.level === l.key).length })),
-    ...(flaggedClasses.size > 0 ? [{ id: "attention" as Filter, label: "Needs attention", count: flaggedClasses.size, warn: true }] : []),
-  ];
+export function ClassesBoard({ view }: { view: ClassesView }) {
+  const items = attentionItems(view);
+  const children = view.classes.reduce((n, k) => n + k.children, 0);
+  const placed = new Set(view.classes.flatMap((k) => [...(k.lead ? [k.lead.id] : []), ...k.co.map((c) => c.id)])).size;
+  const free = view.classes.reduce((n, k) => n + Math.max(0, k.capacity - k.children), 0);
+  const empty = CLASS_LEVELS.filter((l) => !view.classes.some((k) => k.level === l.key)).length;
 
   return (
-    <div className="grid gap-8">
-      <AttentionPanel items={items} />
-
-      <div role="group" aria-label="Filter by level" className="flex flex-wrap gap-2">
-        {chips.map((c) => {
-          const on = filter === c.id;
-          return (
-            <button
-              key={c.id}
-              type="button"
-              aria-pressed={on}
-              onClick={() => setFilter(c.id)}
-              className={cn(
-                "inline-flex h-10 items-center gap-2 rounded-full border pl-4 pr-2 text-sm font-semibold outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                on ? "border-foreground bg-foreground text-background" : "border-input bg-card hover:bg-secondary",
-              )}
-            >
-              {c.label}
-              <span className={cn("grid h-6 min-w-6 place-items-center rounded-full px-1.5 text-xs", on ? "bg-background/20" : c.warn ? "bg-warn/20 text-warn-foreground" : "bg-secondary text-muted-foreground")}>{c.count}</span>
-            </button>
-          );
-        })}
+    <div className="grid gap-6">
+      <div className="grid grid-cols-2 gap-3.5 min-[1100px]:grid-cols-4">
+        <Stat value={children} label={children === 1 ? "Child" : "Children"} hint={`in ${plural(view.classes.length, "class", "classes")}`} />
+        <Stat value={view.classes.length} label={view.classes.length === 1 ? "Class" : "Classes"} hint={empty ? `${plural(empty, "level has", "levels have")} none yet` : `across all ${CLASS_LEVELS.length} levels`} />
+        <Stat value={placed} label={placed === 1 ? "Teacher" : "Teachers"} hint="placed in a class" />
+        <Stat value={free} label="Places free" hint="for the teachers they have" tone="text-[#2c5f80]" />
       </div>
 
-      <div className="grid gap-10">
-        {CLASS_LEVELS.map((lv) => {
-          const mine = shown.filter((k) => k.level === lv.key);
-          if (mine.length === 0 && filter === "attention") return null;
-          if (filter !== "all" && filter !== "attention" && filter !== lv.key) return null;
-          const kids = mine.reduce((n, k) => n + k.children, 0);
-          return (
-            <section key={lv.key} aria-labelledby={`lv-${lv.key}`} className="grid gap-4">
-              <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
-                <div>
-                  <h2 id={`lv-${lv.key}`} className="font-heading text-[22px] font-semibold leading-tight">
-                    {lv.key} <span className="font-medium text-muted-foreground">· {lv.name}</span>
-                  </h2>
-                  <p className="text-[13px] text-muted-foreground">
-                    Born {view.year - lv.turns} · turns {lv.turns} in {view.year}
-                  </p>
-                </div>
-                <p className="text-[13px] text-muted-foreground">
-                  {plural(mine.length, "class", "classes")} · {plural(kids, "child", "children")}
-                </p>
-              </div>
-              <ul className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(19rem,1fr))]">
-                {mine.map((k) => (
-                  <li key={k.id}>
-                    <ClassCard k={k} view={view} flagged={view.flagged.filter((p) => p.classId === k.id)} />
-                  </li>
-                ))}
-                {mine.length === 0 && (
-                  <li>
-                    <NewClass placeholder defaultLevel={lv.key} year={view.year} />
-                  </li>
-                )}
-              </ul>
-            </section>
-          );
-        })}
+      <AttentionPanel items={items} />
+
+      <div className="hidden items-center gap-3.5 text-xs font-extrabold uppercase tracking-widest text-muted-foreground min-[1280px]:flex" aria-hidden>
+        <span>Youngest</span>
+        <span className="h-0.5 flex-1 rounded-full bg-border" />
+        <span className="-mr-1">Oldest</span>
+        <ChevronRight className="-ml-2 size-[18px] text-muted-foreground/70" />
+      </div>
+
+      <div className="grid items-start gap-3.5 md:grid-cols-2 min-[1280px]:-mt-3 min-[1280px]:grid-cols-5">
+        {CLASS_LEVELS.map((lv) => (
+          <LevelColumn key={lv.key} lv={lv} classes={view.classes.filter((k) => k.level === lv.key)} view={view} />
+        ))}
       </div>
     </div>
   );

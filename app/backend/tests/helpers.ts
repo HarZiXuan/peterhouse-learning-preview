@@ -45,7 +45,7 @@ export async function makeClass(teacherIds: number[], name = "K1 Sunflower", lev
   await C.setClassStaff(id, teacherIds[0] ?? null, teacherIds.slice(1));
   const year = (await W.getReportPeriod()).year;
   const birthday = (monthDay = "06-15") => `${year - CLASS_LEVELS.find((l) => l.key === level)!.turns}-${monthDay}`;
-  const add = async (childName: string, pronoun: "she" | "he" | "they", dateOfBirth = birthday(), chineseName = "") =>
-    (await C.addChild({ name: childName, chineseName, pronoun, dateOfBirth, classId: id })).reviewId;
+  const add = async (childName: string, pronoun: "she" | "he", dateOfBirth = birthday(), chineseName = "", lastName = "") =>
+    (await C.addChild({ firstName: childName, lastName, chineseName, pronoun, dateOfBirth, classId: id })).reviewId;
   return { id, add, birthday };
 }

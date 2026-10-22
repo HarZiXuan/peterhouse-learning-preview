@@ -1,7 +1,7 @@
 import {
   Archive, BookOpen, Calculator, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, EyeOff, FileText, Heart, HelpCircle,
   Home, Image as ImageIcon, Info, Languages, ListChecks, Lock, LogOut, Music, Pencil, Plus, RotateCcw, Search, Settings, Sparkles, Upload,
-  ClipboardCheck, Eye, Users, TriangleAlert, LayoutGrid, User, UserCog, ScrollText, CalendarClock, Shield, ArrowRight, School, type LucideIcon,
+  ClipboardCheck, Eye, Users, TriangleAlert, LayoutGrid, User, UserCog, ScrollText, CalendarClock, CalendarDays, Clock, Shield, ArrowRight, School, Baby, type LucideIcon,
 } from "lucide-react";
 
 const ICONS = {
@@ -36,12 +36,15 @@ const ICONS = {
   eye: Eye,
   users: Users,
   classes: Users,
+  children: Baby,
   warn: TriangleAlert,
   overview: LayoutGrid,
   user: User,
   people: UserCog,
   activity: ScrollText,
   semester: CalendarClock,
+  calendar: CalendarDays,
+  timetable: Clock,
   shield: Shield,
   arrow: ArrowRight,
   school: School,

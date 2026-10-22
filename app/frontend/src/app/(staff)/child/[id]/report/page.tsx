@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Pencil } from "lucide-react";
+import { BackLink } from "@/components/back-link";
 import type { ReportView, WorkspaceInfo } from "@peterhouse/shared";
 import { apiGet, apiGetOrNull } from "@/lib/api";
 import { WorkflowPanel } from "../../../WorkflowPanel";
@@ -19,9 +21,8 @@ export default async function ReportViewPage({ params }: { params: Promise<{ id:
   }
   return (
     <main className="mx-auto max-w-[1480px] px-4 pb-16 pt-6 md:px-10 md:pt-8">
-      <Link href={admin ? "/approvals" : "/reports"} className="text-sm text-muted-foreground hover:text-foreground">
-        ← {admin ? "Approvals" : "Reports"}
-      </Link>
+      {/* An administrator who opens a child's review form is sent straight here, so that form is no way back. */}
+      <BackLink fallback={{ href: "/reports", label: "Reports" }} skip={admin ? [`/child/${id}`] : []} />
       <div className="mb-4 mt-2 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground">Report</p>
@@ -30,9 +31,13 @@ export default async function ReportViewPage({ params }: { params: Promise<{ id:
           </h1>
         </div>
         <div className="flex gap-2">
-          <Button asChild variant="outline">
-            <Link href={`/child/${id}`}>Change ratings</Link>
-          </Button>
+          {v.workflow.status !== "approved" && (!admin || !v.workflow.locked) && (
+            <Button asChild variant="outline">
+              <Link href={`/child/${id}`}>
+                <Pencil /> Edit report
+              </Link>
+            </Button>
+          )}
           <DownloadPdf reviewId={Number(id)} childName={v.childName} disabledReason={v.workflow.canDownload ? null : "The PDF for families can be downloaded once the report is approved."} />
         </div>
       </div>

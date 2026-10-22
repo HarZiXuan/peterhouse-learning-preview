@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/back-link";
 import { redirect } from "next/navigation";
 import type { ApprovalDetail, ReportView, WorkspaceInfo } from "@peterhouse/shared";
 import { apiGet, apiGetOrNull } from "@/lib/api";
@@ -19,15 +19,13 @@ export default async function ApprovalPage({ params }: { params: Promise<{ id: s
   const info = await apiGet<WorkspaceInfo>("/workspace");
   if (info.user.role !== "admin") redirect(`/child/${id}/report`);
   const { data: report, code } = await apiGetOrNull<ReportView>(`/reviews/${id}/report`);
-  if (!report) redirect(code === "no_draft" ? `/child/${id}` : "/approvals");
+  if (!report) redirect(code === "no_draft" ? `/child/${id}` : "/reports");
   const extra = await apiGet<Omit<ApprovalDetail, "report">>(`/admin/approvals/${id}`);
   const latest = extra.versions[0];
 
   return (
     <main className="mx-auto max-w-[1480px] px-4 pb-16 pt-6 md:px-10 md:pt-8">
-      <Link href="/approvals" className="text-sm text-muted-foreground hover:text-foreground">
-        ← Approvals
-      </Link>
+      <BackLink fallback={{ href: "/reports", label: "Reports" }} />
       <div className="mb-4 mt-2">
         <p className="text-sm text-muted-foreground">
           {extra.className} · {extra.teacher ?? "No teacher"}

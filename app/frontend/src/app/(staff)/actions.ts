@@ -63,14 +63,9 @@ export async function deletePhotoAction(reviewId: number, photoId: number) {
   return { ok: false as const, error: res.error, photos: now.ok ? now.data.photos : [] };
 }
 
-export async function setPhotoConsentAction(reviewId: number, consent: boolean) {
-  const res = await apiSend("PUT", `/reviews/${reviewId}/photo-consent`, { consent });
-  revalidatePath(`/child/${reviewId}`);
-  return res.ok ? { ok: true as const } : failed(res.error);
-}
-
-export async function startNextSemesterAction() {
-  const res = await apiSend("POST", "/terms/next");
+export async function openPeriodAction(semester: 1 | 2, year: number) {
+  const res = await apiSend("PUT", "/terms/current", { semester, year });
+  revalidatePath("/", "layout");
   redirect(res.ok ? "/settings/semester?saved=1" : `/settings/semester?error=${encodeURIComponent(res.error)}`);
 }
 
@@ -80,11 +75,12 @@ type Done = { ok: true; key?: string } | { ok: false; error: string };
 
 async function admin(method: "POST" | "PUT", path: string, body?: unknown): Promise<Done> {
   const res = await apiSend<{ key?: string }>(method, `/admin${path}`, body);
-  revalidatePath("/questions", "layout");
+  revalidatePath("/reports", "layout");
   return res.ok ? { ok: true, key: res.data.key } : failed(res.error);
 }
 
-export const addQuestionAction = async (areaKey: string, text: string) => admin("POST", "/questions", { areaKey, text });
+export const addQuestionAction = async (areaKey: string, text: string, levels?: string[]) => admin("POST", "/questions", { areaKey, text, levels });
+export const setQuestionLevelsAction = async (key: string, levels: string[]) => admin("PUT", `/questions/${encodeURIComponent(key)}/levels`, { levels });
 export const rewordQuestionAction = async (key: string, text: string, sameSkill: boolean) => admin("PUT", `/questions/${encodeURIComponent(key)}`, { text, sameSkill });
 export const retireQuestionAction = async (key: string) => admin("POST", `/questions/${encodeURIComponent(key)}/retire`);
 export const restoreQuestionAction = async (key: string) => admin("POST", `/questions/${encodeURIComponent(key)}/restore`);
@@ -94,7 +90,7 @@ export const discardQuestionsAction = async () => admin("POST", "/questions/disc
 
 export async function publishQuestionsAction(): Promise<{ ok: true; version: number } | { ok: false; error: string }> {
   const res = await apiSend<{ version: number; changes: number }>("POST", "/admin/questions/publish");
-  revalidatePath("/questions", "layout");
+  revalidatePath("/reports", "layout");
   return res.ok ? { ok: true, version: res.data.version } : failed(res.error);
 }
 

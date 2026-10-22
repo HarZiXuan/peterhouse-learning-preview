@@ -41,7 +41,9 @@ describe("teacher journey", () => {
     expect(r0.status).toBe("draft");
     expect(r0.rubric_version_id).not.toBeNull();
     expect(r0.rubric.areas.map((a) => a.key)).toEqual(["eng", "chi", "mat", "sed", "enr"]);
-    expect(r0.rubric.areas.reduce((n, a) => n + a.skills.length, 0)).toBe(19);
+    // A K1 child gets the K1 questions only: 22 of them.
+    expect(r0.rubric.level).toBe("K1");
+    expect(r0.rubric.areas.reduce((n, a) => n + a.skills.length, 0)).toBe(22);
 
     // Writing before answering is refused.
     expect((await R.writeDraft(teacher, id)).ok).toBe(false);
@@ -80,8 +82,8 @@ describe("teacher journey", () => {
     expect(data.opening.length).toBeGreaterThan(20);
     // Families get the teacher's picks, statements with the name filled in, and never a number.
     expect(data.homeIdeas).toEqual(r0.rubric.areas[4].homeIdeas!.slice(0, 2));
-    expect(data.areas[0].skills[0].text).toBe("Mia 陈 listens well and responds in a group");
-    expect(data.areas[3].skills[2].text).toBe("Mia 陈 can say how she feels");
+    expect(data.areas[0].skills[0].text).toBe("Mia 陈 reads simple sentences and common sight words");
+    expect(data.areas[3].skills[2].text).toBe("Mia 陈 looks after her own belongings and finishes tasks on her own");
     expect(data.areas[4].love).toMatchObject({ answer: "Loved the music corner" });
     expect(JSON.stringify(data)).not.toMatch(/"score"|overallScore/);
 
@@ -135,10 +137,51 @@ describe("encryption at rest", () => {
     expect((await R.loadAnswers(id, rev.rubric)).answers[area.key].note).toBe("Built a tower of nine blocks");
   });
 
+  it("keeps a child's parents and notes encrypted, and shows them on the profile", async () => {
+    const C = await import("../src/domain/children");
+    const reviewId = await cls.add("Profile Child", "he", cls.birthday("05-14"));
+    const childId = (await t.pool.query("SELECT child_id FROM reviews WHERE id = $1", [reviewId])).rows[0].child_id as number;
+    const fresh = await C.childProfile(childId);
+    expect(fresh.guardians).toEqual([]);
+    expect(fresh.joinedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(fresh.semesters).toMatchObject([{ reviewId, current: true, classId: cls.id }]);
+
+    await C.updateChildInfo(childId, {
+      joinedOn: "2025-01-06",
+      guardians: [{ name: " Wendy Ostrander ", relationship: "Mother", phone: "+65 9123 4567", email: "wendy@x.sg" }, { name: "", relationship: "", phone: "", email: "" }],
+      notes: "Picked up by grandfather on Fridays",
+    });
+    const dump = JSON.stringify((await t.pool.query("SELECT * FROM children WHERE id = $1", [childId])).rows);
+    for (const secret of ["Wendy", "9123 4567", "wendy@x.sg", "grandfather"]) expect(dump, `"${secret}" must not appear in the database`).not.toContain(secret);
+
+    const back = await C.childProfile(childId);
+    expect(back.joinedOn).toBe("2025-01-06");
+    expect(back.guardians).toEqual([{ name: "Wendy Ostrander", relationship: "Mother", phone: "+65 9123 4567", email: "wendy@x.sg" }]);
+    expect(back.notes).toBe("Picked up by grandfather on Fridays");
+  });
+
+  it("keeps the first and last name apart: the report says the first name, lists show both", async () => {
+    const C = await import("../src/domain/classes");
+    const R = await import("../src/domain/reviews");
+    const id = await cls.add("Quentin", "he", undefined, "", "Vandersloot");
+    const pupil = (await C.classDetail(cls.id)).pupils.find((p) => p.reviewId === id)!;
+    expect(pupil).toMatchObject({ name: "Quentin Vandersloot", firstName: "Quentin", lastName: "Vandersloot" });
+    const r = (await R.getReviewRow(id))!;
+    expect(r.preferred_name).toBe("Quentin");
+    expect((await R.buildReportData(r)).childName).toBe("Quentin Vandersloot");
+    // The last name alone is also kept out of anything sent to the writer.
+    expect((await R.rosterFor(r)).child).toContain("Vandersloot");
+    const dump = JSON.stringify((await t.pool.query("SELECT * FROM children WHERE id = $1", [r.child_id])).rows);
+    expect(dump).not.toContain("Vandersloot");
+    await C.updateChild(id, { firstName: " Quinn ", lastName: "", chineseName: "", pronoun: "he", dateOfBirth: r.date_of_birth });
+    expect((await C.classDetail(cls.id)).pupils.find((p) => p.reviewId === id)).toMatchObject({ name: "Quinn", firstName: "Quinn", lastName: "" });
+    await expect(C.updateChild(id, { firstName: " ", lastName: "Vandersloot", chineseName: "", pronoun: "he", dateOfBirth: r.date_of_birth })).rejects.toMatchObject({ status: 400 });
+  });
+
   it("stores photos encrypted in the database and serves them back", async () => {
     const W = await import("../src/domain/workspace");
     const P = await import("../src/domain/photos");
-    const id = await cls.add("Photo Child", "they");
+    const id = await cls.add("Photo Child", "she");
     const jpeg = await sharp({ create: { width: 64, height: 48, channels: 3, background: "#c33" } }).jpeg().toBuffer();
     const { id: photoId } = await P.addPhoto(id, "eng", jpeg);
     const stored = (await t.pool.query("SELECT data FROM review_photos WHERE id = $1", [photoId])).rows[0].data as Buffer;
@@ -146,15 +189,18 @@ describe("encryption at rest", () => {
     expect(stored.includes(jpeg.subarray(0, 40))).toBe(false);
     const back = await P.readPhoto(photoId);
     expect(back!.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))).toBe(true);
-    // Without consent the report may not show it.
-    expect(await P.reportPhotoIds(id)).toEqual([]);
-    await P.setPhotoConsent(id, true);
+    // The report shows every photo, with no sign-off from the parents needed.
     expect(await P.reportPhotoIds(id)).toEqual([photoId]);
-    // Three per learning area.
-    await P.addPhoto(id, "eng", jpeg);
-    await P.addPhoto(id, "eng", jpeg);
-    await expect(P.addPhoto(id, "eng", jpeg)).rejects.toMatchObject({ status: 400 });
+    // One photo for each learning page and one for the cover: a new photo takes the place of the old one.
+    const second = await P.addPhoto(id, "eng", jpeg);
+    expect((await P.listPhotos(id)).filter((p) => p.area_key === "eng").map((p) => p.id)).toEqual([second.id]);
     await P.addPhoto(id, "mat", jpeg);
+    const cover = await P.addPhoto(id, "cover", jpeg);
+    const newCover = await P.addPhoto(id, "cover", jpeg);
+    const covers = (await P.listPhotos(id)).filter((p) => p.area_key === "cover");
+    expect(covers.map((p) => p.id)).toEqual([newCover.id]);
+    expect(covers[0].id).not.toBe(cover.id);
+    expect((await P.listPhotos(id)).length).toBe(3);
   });
 });
 
@@ -166,7 +212,9 @@ describe("semesters", () => {
     expect(mia.hasReport).toBe(true);
     const s1Id = mia.reviewId;
     const s1Before = await R.loadAnswers(s1Id, (await R.getReviewRow(s1Id))!.rubric);
-    const first = await W.getReportPeriod(); // whichever semester the clock says it is
+    // Start from June so the next semester is the same year and level; comparisons are made only within a level.
+    await W.setReportPeriod("June", (await W.getReportPeriod()).year);
+    const first = await W.getReportPeriod();
     const second = first.season === "June" ? "December" : "June";
 
     // The teacher sends the report for review and the administrator approves it.
@@ -214,7 +262,7 @@ describe("migrations", () => {
     const { migrate } = await import("../src/migrate");
     expect(await migrate(t.pool, () => {})).toEqual([]);
     const rows = (await t.pool.query("SELECT version, checksum FROM schema_migrations")).rows;
-    expect(rows.map((r) => r.version)).toEqual(["0001_init.sql", "0002_teacher_questions.sql", "0003_classes.sql", "0004_review_workflow.sql"]);
+    expect(rows.map((r) => r.version)).toEqual(["0001_init.sql", "0002_teacher_questions.sql", "0003_classes.sql", "0004_review_workflow.sql", "0005_calendar.sql", "0006_subject_timetable.sql", "0007_questions_by_level.sql", "0008_subject_teachers.sql", "0009_child_profile.sql", "0010_child_last_name.sql", "0011_week_timetables.sql", "0012_subjects_plain.sql", "0013_questions_five_levels.sql", "0014_graduated_after.sql", "0015_pronouns_he_she.sql"]);
     expect(rows[0].checksum).toMatch(/^[0-9a-f]{64}$/);
   });
 });

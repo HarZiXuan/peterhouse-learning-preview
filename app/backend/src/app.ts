@@ -6,6 +6,8 @@ import { pool } from "./db";
 import { errorHandler, notFoundHandler } from "./http";
 import { adminRouter } from "./routes/admin";
 import { authRouter } from "./routes/auth";
+import { calendarRouter, feedRouter } from "./routes/calendar";
+import { timetableRouter } from "./routes/timetable";
 import { reviewsRouter } from "./routes/reviews";
 import { workspaceRouter } from "./routes/workspace";
 
@@ -31,10 +33,14 @@ export function createApp() {
   api.use(sameOriginOnly);
   api.use(express.json({ limit: "1mb" }));
   api.use("/auth", authRouter);
+  // Before sign-in: the private calendar link is the only key Google Calendar and Outlook have.
+  api.use(feedRouter);
   api.use(requireAuth);
   api.use("/admin", adminRouter);
   api.use(workspaceRouter);
   api.use(reviewsRouter);
+  api.use(calendarRouter);
+  api.use(timetableRouter);
   api.use(notFoundHandler);
 
   app.use("/api", api);

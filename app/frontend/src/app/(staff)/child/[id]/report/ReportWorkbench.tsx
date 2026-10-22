@@ -8,6 +8,7 @@ import type { SchoolDetails } from "@peterhouse/shared";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { editTextAction, rewriteSectionAction } from "../../../actions";
 
 type Section = { key: string; title: string; text: string };
@@ -86,6 +87,59 @@ export function ReportWorkbench({
     (card?.querySelector("textarea") as HTMLTextAreaElement | null)?.focus({ preventScroll: true });
   };
 
+  const dirtyKeys = locked ? [] : sections.map((s) => s.key).filter((k) => texts[k] !== saved[k]);
+  const hasUnsaved = dirtyKeys.length > 0;
+  const [leaveTo, setLeaveTo] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false);
+
+  // Ask before leaving with unsaved wording: closing or reloading the tab, and any link on the page.
+  useEffect(() => {
+    if (!hasUnsaved) return;
+    const onUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if ((a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+      const url = new URL(a.href, location.href);
+      if (url.origin !== location.origin || (url.pathname === location.pathname && url.search === location.search)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeaveTo(url.pathname + url.search + url.hash);
+    };
+    window.addEventListener("beforeunload", onUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [hasUnsaved]);
+
+  const saveAndLeave = async () => {
+    if (!leaveTo) return;
+    setLeaving(true);
+    for (const key of dirtyKeys) {
+      const res = await editTextAction(reviewId, key, texts[key]);
+      if (!res.ok) {
+        toast.error(res.error);
+        setLeaving(false);
+        setLeaveTo(null);
+        return;
+      }
+    }
+    setSaved((sv) => ({ ...sv, ...Object.fromEntries(dirtyKeys.map((k) => [k, texts[k]])) }));
+    toast.success("Changes saved.");
+    const to = leaveTo;
+    setLeaving(false);
+    setLeaveTo(null);
+    router.push(to);
+  };
+  const discardAndLeave = () => {
+    const to = leaveTo;
+    setSaved(texts);
+    setLeaveTo(null);
+    if (to) setTimeout(() => router.push(to), 0);
+  };
+
   const titleOf = (key: string) => sections.find((s) => s.key === key)?.title ?? "Paragraph";
   const save = (key: string) =>
     start(async () => {
@@ -111,6 +165,23 @@ export function ReportWorkbench({
 
   return (
     <div className="wb">
+      <AlertDialog open={leaveTo !== null} onOpenChange={(o) => !o && !leaving && setLeaveTo(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>You have unsaved changes</AlertDialogTitle>
+            <AlertDialogDescription>Save your edits to the wording before you leave, or discard them.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={leaving}>Keep editing</AlertDialogCancel>
+            <Button variant="outline" disabled={leaving} onClick={discardAndLeave}>
+              Discard changes
+            </Button>
+            <AlertDialogAction disabled={leaving} onClick={(e) => { e.preventDefault(); void saveAndLeave(); }}>
+              {leaving ? "Saving…" : "Save and leave"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="wb-preview" ref={previewRef}>
         <div style={{ zoom }}>
           <Report data={data} school={school} isDraft={false} reportDate={new Date(reportDateIso)} edits={texts} active={active} onPick={pickFromReport} />
@@ -142,7 +213,7 @@ export function ReportWorkbench({
                   onChange={(e) => setTexts((t) => ({ ...t, [s.key]: e.target.value }))}
                 />
               </label>
-              <div className="row" style={{ marginTop: 8 }}>
+              <div className="row" style={{ marginTop: 8 }} hidden={!!locked}>
                 <Button size="sm" disabled={!dirty || busy || !!locked} onClick={() => save(s.key)}>
                   Save
                 </Button>

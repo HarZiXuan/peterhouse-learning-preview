@@ -9,7 +9,7 @@
 // birthday, photo, class, teacher or school, so it cannot leak them.
 // tests/anonymise.test.ts checks this.
 
-import { scoreOf, semesterLabel, skillPhrase, type AreaAnswer, type Pronoun, type Rubric } from "@peterhouse/shared";
+import { classLevel, isYoungLevel, scoreOf, semesterLabel, skillPhrase, type AreaAnswer, type ClassLevel, type Pronoun, type Rubric } from "@peterhouse/shared";
 
 export type Roster = {
   /** Every name the current child goes by (preferred and legal name parts). */
@@ -105,6 +105,8 @@ export function scrubText(text: string, roster: Roster): ScrubResult {
 
 export type ReviewForWriting = {
   pronoun: Pronoun;
+  /** The child's level (PG … K2), so the writing suits the age. Not identifying: many children share it. */
+  level?: ClassLevel;
   season: "June" | "December";
   rubric: Rubric;
   answers: Record<string, AreaAnswer>;
@@ -134,6 +136,10 @@ export function buildAnonymousPayload(review: ReviewForWriting, roster: Roster):
   const lines: string[] = [];
   lines.push(`pronoun: ${review.pronoun}`);
   lines.push(`semester: ${semesterLabel(review.season)}`);
+  if (review.level) {
+    const lv = classLevel(review.level);
+    lines.push(`age group: ${lv.name} (turning ${lv.turns} this year)${isYoungLevel(review.level) ? ". Very young: keep the words simple, but still say plainly what the child cannot do yet." : ""} Never compare the child with other children.`);
+  }
   let notObserved = 0;
   let total = 0;
   for (const area of review.rubric.areas) {
@@ -150,7 +156,6 @@ export function buildAnonymousPayload(review: ReviewForWriting, roster: Roster):
     if (note) lines.push(`comment (name-scrubbed): "${scrub(note)}"`);
     const love = ans?.love?.trim();
     if (area.love && love) lines.push(`${skillPhrase({ key: area.love.key, text: area.love.text }, review.pronoun).toLowerCase()} (name-scrubbed): "${scrub(love)}"`);
-    if (ans?.home?.length) lines.push(`ideas to try at home (picked by the teacher): ${ans.home.join("; ")}`);
   }
   lines.push("");
   lines.push(`strengths: ${review.strengths.map((k) => phrase.get(k) ?? k).join("; ") || "none chosen"}`);

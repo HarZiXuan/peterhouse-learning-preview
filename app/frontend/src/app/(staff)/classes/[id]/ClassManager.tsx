@@ -4,9 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowRight, ArrowRightLeft, ChevronRight, Ellipsis, Info, LogOut, Pencil, Plus, Search, Trash2, TriangleAlert } from "lucide-react";
-import type { ClassChild, ClassDetail, ClassSummary, LevelProblem, Pronoun, ReviewStatus, StaffRef } from "@peterhouse/shared";
-import { LEVEL_PROBLEM_TEXT, STATUS_LABEL, classLevel, levelForBirthday } from "@peterhouse/shared";
+import { ArrowRight, ArrowRightLeft, ChevronRight, Ellipsis, Info, LogOut, Pencil, Plus, Search, Trash2, TriangleAlert, UserRound } from "lucide-react";
+import type { ClassChild, ClassDetail, ClassSummary, LevelProblem, Pronoun, ReviewStatus, StaffRef, SubjectTeacher } from "@peterhouse/shared";
+import { LEVEL_PROBLEM_TEXT, STATUS_LABEL, birthdayRange, classLevel, levelForBirthday } from "@peterhouse/shared";
 import { adminSend } from "@/lib/admin-client";
 import { ChildAvatar, initials } from "@/components/ui";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -21,10 +21,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { SUBJECT_SWATCH } from "@/lib/calendar";
 import { cn } from "@/lib/utils";
 import { SELECT } from "../../AddChild";
 import { removeChildAction } from "../../actions";
-import { Meter, STATUS_FILL, STATUS_ORDER, STATUS_TONE, capacityOf, personTint } from "../shared";
+import { Meter, STATUS_FILL, STATUS_ORDER, STATUS_TONE, TeacherStack, capacityOf, personTint } from "../shared";
 
 /** Runs one admin request, shows the outcome, and refreshes the page on success. */
 function useAct() {
@@ -81,16 +82,31 @@ export function RemoveClass({ id, name }: { id: number; name: string }) {
   );
 }
 
-function EditChild({ child, detail, classes, open, onOpenChange }: { child: ClassChild; detail: ClassDetail; classes: ClassSummary[]; open: boolean; onOpenChange: (o: boolean) => void }) {
+/** Name, Chinese name, pronouns and birthday. Also opened from the child's profile, so it needs only the class's name, level and year. */
+export function EditChild({
+  child,
+  detail,
+  classes,
+  open,
+  onOpenChange,
+}: {
+  child: Pick<ClassChild, "reviewId" | "name" | "firstName" | "lastName" | "chineseName" | "pronoun" | "dateOfBirth">;
+  detail: Pick<ClassDetail, "name" | "level" | "year">;
+  classes: ClassSummary[];
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
   const { busy, act } = useAct();
   const [dob, setDob] = useState(child.dateOfBirth);
   const [picked, setPicked] = useState<number | null>(null);
+  // Only birthdays that fit a class of this school: any level it has a class for, and this child's own.
+  const allowed = birthdayRange(detail.year, [...new Set([detail.level, ...classes.map((k) => k.level)])]);
   const found = levelForBirthday(dob, detail.year);
   const level = "level" in found ? found.level : null;
   // A birthday of another level means the child changes class too: only that level's classes are offered.
   const elsewhere = !!level && level !== detail.level;
   const ofLevel = classes.filter((k) => k.level === level);
-  const target = elsewhere ? (ofLevel.find((k) => k.id === picked) ?? ofLevel[0] ?? null) : null;
+  const target = elsewhere ? (ofLevel.find((k) => k.id === picked) ?? null) : null;
   const blocked = !level || (elsewhere && !target);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -102,7 +118,8 @@ function EditChild({ child, detail, classes, open, onOpenChange }: { child: Clas
             if (blocked) return;
             const f = new FormData(e.currentTarget);
             const body = {
-              name: String(f.get("name") ?? ""),
+              firstName: String(f.get("firstName") ?? ""),
+              lastName: String(f.get("lastName") ?? ""),
               chineseName: String(f.get("chineseName") ?? ""),
               pronoun: String(f.get("pronoun")) as Pronoun,
               dateOfBirth: dob,
@@ -115,9 +132,15 @@ function EditChild({ child, detail, classes, open, onOpenChange }: { child: Clas
             <DialogTitle>Edit {child.name}</DialogTitle>
             <DialogDescription>Changes show on their form and report straight away.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor={`n-${child.reviewId}`}>First name</Label>
-            <Input id={`n-${child.reviewId}`} name="name" defaultValue={child.name} maxLength={80} required />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor={`n-${child.reviewId}`}>First name</Label>
+              <Input id={`n-${child.reviewId}`} name="firstName" defaultValue={child.firstName} maxLength={80} required />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor={`l-${child.reviewId}`}>Last name</Label>
+              <Input id={`l-${child.reviewId}`} name="lastName" defaultValue={child.lastName} maxLength={80} required />
+            </div>
           </div>
           <div className="grid gap-2">
             <Label htmlFor={`z-${child.reviewId}`}>Chinese name</Label>
@@ -128,12 +151,11 @@ function EditChild({ child, detail, classes, open, onOpenChange }: { child: Clas
             <select id={`p-${child.reviewId}`} name="pronoun" className={SELECT} defaultValue={child.pronoun}>
               <option value="she">she / her</option>
               <option value="he">he / him</option>
-              <option value="they">they / them</option>
             </select>
           </div>
           <div className="grid gap-2">
             <Label htmlFor={`d-${child.reviewId}`}>Birthday</Label>
-            <Input id={`d-${child.reviewId}`} type="date" value={dob} onChange={(e) => setDob(e.target.value)} required />
+            <Input id={`d-${child.reviewId}`} type="date" value={dob} min={allowed.min} max={allowed.max} onChange={(e) => setDob(e.target.value)} required />
             <p className={`text-xs ${dob && !level ? "text-destructive" : "text-muted-foreground"}`}>
               {level ? `${level} in ${detail.year}.` : dob ? `${LEVEL_PROBLEM_TEXT[(found as { problem: LevelProblem }).problem]}, so they cannot be in a class.` : "Sets their level."}
             </p>
@@ -148,7 +170,8 @@ function EditChild({ child, detail, classes, open, onOpenChange }: { child: Clas
               ) : (
                 <>
                   <Label htmlFor={`c-${child.reviewId}`}>New class</Label>
-                  <select id={`c-${child.reviewId}`} className={SELECT} value={target?.id ?? ""} onChange={(e) => setPicked(Number(e.target.value))}>
+                  <select id={`c-${child.reviewId}`} className={SELECT} value={target?.id ?? ""} onChange={(e) => setPicked(e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">Choose a class…</option>
                     {ofLevel.map((k) => (
                       <option key={k.id} value={k.id}>
                         {k.name}
@@ -176,6 +199,7 @@ export function ClassTeachers({ detail, teachers, classes }: { detail: ClassDeta
   const [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState(false);
   const [q, setQ] = useState("");
+  const [setting, setSetting] = useState<SubjectTeacher | null>(null);
   const ratio = classLevel(detail.level).ratio;
   const people = [...(detail.lead ? [{ ...detail.lead, isLead: true }] : []), ...detail.co.map((c) => ({ ...c, isLead: false }))];
   const here = new Set(people.map((p) => p.id));
@@ -209,6 +233,7 @@ export function ClassTeachers({ detail, teachers, classes }: { detail: ClassDeta
   const remove = (t: StaffRef & { isLead: boolean }) =>
     save(t.isLead ? { leadId: null, coIds: prev.coIds } : { leadId: prev.leadId, coIds: prev.coIds.filter((id) => id !== t.id) }, people.length === 1 ? `${t.name} removed. Only administrators see ${detail.name} now.` : `${t.name} removed from ${detail.name}.`);
 
+  const subjectsOf = (id: number) => (detail.teacherSubjects[id] ?? []).flatMap((sid) => detail.subjects.filter((x) => x.id === sid));
   const taughtIn = (t: StaffRef) => classes.filter((k) => k.id !== detail.id && (k.lead?.id === t.id || k.co.some((c) => c.id === t.id))).map((k) => k.name);
   const options = teachers
     .filter((t) => !here.has(t.id) && t.name.toLowerCase().includes(q.trim().toLowerCase()))
@@ -220,7 +245,7 @@ export function ClassTeachers({ detail, teachers, classes }: { detail: ClassDeta
     <Card className="gap-4 shadow-none">
       <CardHeader>
         <CardTitle className="font-heading text-[22px] font-semibold">Teachers</CardTitle>
-        <CardDescription>Everyone here can rate the children and write their reports. Changes save as you go.</CardDescription>
+        <CardDescription>These teachers can rate the children and write their learning reports. Changes save as you go.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         {teachers.length === 0 ? (
@@ -242,8 +267,28 @@ export function ClassTeachers({ detail, teachers, classes }: { detail: ClassDeta
                     <Avatar className={cn("size-11", personTint(i))}>
                       <AvatarFallback className={cn("text-sm font-bold", personTint(i))}>{initials(p.name)}</AvatarFallback>
                     </Avatar>
-                    <span className="min-w-0 flex-1 truncate font-semibold">{p.name}</span>
-                    {p.isLead && <Badge className="border-transparent bg-[#dbeef9] px-2.5 font-bold text-[#0a3a57]">Lead</Badge>}
+                    <span className="grid min-w-0 flex-1 gap-1 leading-snug">
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="font-bold">{p.name}</span>
+                        <Badge className={cn("border-transparent px-2.5 font-bold", p.isLead ? "bg-[#dbeef9] text-[#0a3a57]" : "bg-secondary text-muted-foreground")}>{p.isLead ? "Lead teacher" : "Teacher"}</Badge>
+                      </span>
+                      <span className="flex flex-wrap items-center gap-1.5 text-[13.5px] text-muted-foreground">
+                        Teaches
+                        {subjectsOf(p.id).length === 0 ? (
+                          <b className="font-bold text-foreground">all subjects</b>
+                        ) : (
+                          subjectsOf(p.id).map((x) => (
+                            <span key={x.id} className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[13px] font-bold text-foreground">
+                              <span className="size-2 rounded-full" style={{ background: SUBJECT_SWATCH[x.color] }} aria-hidden />
+                              {x.name}
+                            </span>
+                          ))
+                        )}
+                      </span>
+                      <button type="button" disabled={busy} className="w-fit text-[13.5px] font-bold text-primary underline-offset-4 hover:underline" onClick={() => setSetting({ id: p.id, name: p.name, subjectIds: detail.teacherSubjects[p.id] ?? [] })}>
+                        {subjectsOf(p.id).length ? "Change subjects" : "Choose subjects"}
+                      </button>
+                    </span>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="-mr-2 text-muted-foreground" aria-label={`Options for ${p.name}`} disabled={busy}>
@@ -251,6 +296,7 @@ export function ClassTeachers({ detail, teachers, classes }: { detail: ClassDeta
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => setSetting({ id: p.id, name: p.name, subjectIds: detail.teacherSubjects[p.id] ?? [] })}>Set subjects</DropdownMenuItem>
                         {!p.isLead && <DropdownMenuItem onSelect={() => makeLead(p)}>Make lead</DropdownMenuItem>}
                         <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => remove(p)}>
                           Remove from class
@@ -265,7 +311,9 @@ export function ClassTeachers({ detail, teachers, classes }: { detail: ClassDeta
             <p className="flex items-start gap-2.5 rounded-lg bg-[#eef6fb] px-3.5 py-3 text-sm text-[#0a3a57]">
               <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
               <span>
-                Each teacher adds {ratio} places in {classLevel(detail.level).name}.{full ? " This class is full, so add a teacher to take another child." : ""}
+                <b>Why does this matter?</b> Every teacher adds room for {ratio} children in {classLevel(detail.level).name}.{" "}
+                {people.length > 0 ? `With ${people.length === 1 ? "1 teacher" : `${people.length} teachers`}, this class can take up to ${ratio * people.length}.` : "Add a teacher to give this class room for children."}
+                {full ? " It is full now, so add a teacher to take another child." : ""}
               </span>
             </p>
 
@@ -308,51 +356,147 @@ export function ClassTeachers({ detail, teachers, classes }: { detail: ClassDeta
           </>
         )}
       </CardContent>
+      {setting && <SubjectTeacherDialog key={setting.id} detail={detail} teacher={setting} isStaff available={[]} onClose={() => setSetting(null)} />}
     </Card>
   );
 }
 
-export function ClassProgress({ detail }: { detail: ClassDetail }) {
+function SubjectTeacherDialog({ detail, teacher, available, isStaff = false, onClose }: { detail: ClassDetail; teacher: SubjectTeacher | null; available: StaffRef[]; isStaff?: boolean; onClose: () => void }) {
+  const { busy, act } = useAct();
+  const [userId, setUserId] = useState<number>(teacher?.id ?? 0);
+  const [picked, setPicked] = useState<number[]>(teacher?.subjectIds ?? []);
+  const name = teacher?.name ?? available.find((t) => t.id === userId)?.name ?? "";
+  const toggle = (id: number) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const save = async () => {
+    const ok = await act(
+      () => adminSend("PUT", `/classes/${detail.id}/subject-teachers/${userId}`, { subjectIds: picked }),
+      teacher ? (picked.length === 0 && isStaff ? `${name} teaches every subject in ${detail.name}.` : `${name}’s subjects in ${detail.name} are saved.`) : `${name} now teaches ${picked.map((id) => detail.subjects.find((x) => x.id === id)?.name).join(" and ")} in ${detail.name}.`,
+    );
+    if (ok) onClose();
+  };
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{teacher ? `${teacher.name}’s subjects` : "Add a subject teacher"}</DialogTitle>
+          <DialogDescription>{isStaff ? `The subjects they teach in ${detail.name}. With none chosen they teach every subject.` : `They see ${detail.name}’s children and rate them. They cannot write or send the reports.`}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          {!teacher && (
+            <div className="grid gap-1.5">
+              <Label htmlFor="st-teacher">Teacher</Label>
+              <select id="st-teacher" className={SELECT} value={userId || ""} onChange={(e) => setUserId(Number(e.target.value))}>
+                <option value="">Choose a teacher</option>
+                {available.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <fieldset className="grid gap-1.5">
+            <legend className="mb-1.5 text-sm font-medium">Subjects they teach here</legend>
+            <div className="flex flex-wrap gap-2">
+              {detail.subjects.map((x) => (
+                <button
+                  key={x.id}
+                  type="button"
+                  aria-pressed={picked.includes(x.id)}
+                  onClick={() => toggle(x.id)}
+                  className="inline-flex h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-semibold text-muted-foreground aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background"
+                >
+                  <span className="size-2.5 rounded-full" style={{ background: SUBJECT_SWATCH[x.color] }} aria-hidden />
+                  {x.name}
+                </button>
+              ))}
+            </div>
+            {teacher && !isStaff && picked.length === 0 && <p className="text-[13px] text-muted-foreground">With no subjects, {teacher.name} is taken off this class and its lessons.</p>}
+          </fieldset>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </DialogClose>
+          <Button disabled={busy || !userId || (!teacher && picked.length === 0)} onClick={save}>
+            {teacher && !isStaff && picked.length === 0 ? "Remove from class" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The class in three plain boxes: how many children, who teaches, how far the learning reports are. */
+export function ClassGlance({ detail }: { detail: ClassDetail }) {
   const active = detail.pupils.filter((p) => !p.left);
   const counts = Object.fromEntries(STATUS_ORDER.map((s) => [s, active.filter((p) => p.status === s).length])) as Record<ReviewStatus, number>;
   const written = counts.written + counts.submitted + counts.changes_requested + counts.approved;
-  const cap = capacityOf(detail);
+  const cap = capacityOf({ children: active.length, capacity: detail.capacity });
+  const ratio = classLevel(detail.level).ratio;
+  const people = [...(detail.lead ? [detail.lead] : []), ...detail.co];
+  const co = detail.co.map((c) => c.name);
+  const label = "text-xs font-extrabold uppercase tracking-widest text-muted-foreground";
+  const roomText =
+    cap.state === "none" ? "No teacher yet, so the class has no room set." : cap.state === "over" ? `${active.length - detail.capacity} more than the class can take.` : cap.state === "full" ? "This class is full." : `Room for ${detail.capacity - active.length} more.`;
+  const breakdown = [...STATUS_ORDER].reverse().filter((s) => counts[s] > 0).map((s) => `${counts[s]} ${STATUS_LABEL[s].toLowerCase()}`);
   return (
-    <Card className="gap-5 shadow-none">
-      <CardHeader>
-        <CardTitle className="font-heading text-[22px] font-semibold">Reports</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-5">
-        <div className="grid gap-2">
-          <div className="flex items-baseline justify-between text-sm">
-            <span>
-              <b>{active.length}</b> <span className="text-muted-foreground">{cap.state === "none" ? (active.length === 1 ? "child" : "children") : `of ${detail.capacity} places`}</span>
-            </span>
-            <span className={cn("text-[13px] font-bold", cap.state === "over" ? "text-destructive" : cap.state === "none" ? "text-warn-foreground" : "text-muted-foreground")}>{cap.label}</span>
-          </div>
-          <Meter value={active.length} max={detail.capacity} tone={cap.state === "over" ? "over" : "default"} label={`${active.length} of ${detail.capacity} places`} className="h-2" />
+    <section aria-label="This class at a glance" className="grid gap-4 md:grid-cols-3">
+      <Card className="gap-2.5 rounded-[20px] px-[22px] py-5 shadow-none">
+        <p className={label}>Children</p>
+        <p className="flex items-baseline gap-2">
+          <span className="font-heading text-[44px] font-bold leading-none">{active.length}</span>
+          <span className="font-bold text-foreground/80">in this class</span>
+        </p>
+        <Meter value={active.length} max={detail.capacity} tone={cap.state === "over" ? "over" : "default"} label={`${active.length} children, room for ${detail.capacity}`} className="h-2" />
+        <p className="text-sm">
+          <b className={cn(cap.state === "over" && "text-destructive")}>{roomText}</b>{" "}
+          <span className="text-muted-foreground">
+            Each teacher can look after {ratio} children{people.length > 0 ? `, and this class has ${people.length === 1 ? "1 teacher" : `${people.length} teachers`}.` : "."}
+          </span>
+        </p>
+      </Card>
+
+      <Card className="gap-2.5 rounded-[20px] px-[22px] py-5 shadow-none">
+        <p className={label}>Teachers</p>
+        <p className="flex items-baseline gap-2">
+          <span className="font-heading text-[44px] font-bold leading-none">{people.length}</span>
+          <span className="font-bold text-foreground/80">{people.length === 1 ? "teacher" : "teaching this class"}</span>
+        </p>
+        <div className="flex min-h-2 items-center">{people.length > 0 && <TeacherStack people={people} />}</div>
+        <p className="text-sm">
+          {detail.lead ? (
+            <>
+              <b>{detail.lead.name}</b> is the lead teacher{co.length ? <>, with <b>{co.join(", ")}</b></> : ""}.
+            </>
+          ) : people.length > 0 ? (
+            <>
+              <b>{co.join(", ")}</b> teach{co.length === 1 ? "es" : ""} this class. It has no lead teacher yet.
+            </>
+          ) : (
+            <span className="font-bold text-warn-foreground">Nobody teaches this class yet, so only administrators can see it.</span>
+          )}
+        </p>
+      </Card>
+
+      <Card className="gap-2.5 rounded-[20px] px-[22px] py-5 shadow-none">
+        <p className={label}>Learning reports</p>
+        <p className="flex items-baseline gap-2">
+          <span className="font-heading text-[44px] font-bold leading-none">
+            {written} <span className="text-2xl text-muted-foreground">of {active.length}</span>
+          </span>
+          <span className="font-bold text-foreground/80">written</span>
+        </p>
+        <div role="img" aria-label={STATUS_ORDER.map((s) => `${counts[s]} ${STATUS_LABEL[s].toLowerCase()}`).join(", ")} className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-border">
+          {[...STATUS_ORDER].reverse().filter((s) => counts[s] > 0 && s !== "not_started").map((s) => (
+            <div key={s} className="h-full" style={{ width: `${(counts[s] / Math.max(1, active.length)) * 100}%`, background: STATUS_FILL[s] }} />
+          ))}
         </div>
-        <div className="grid gap-3">
-          <p className="text-sm">
-            <b>{written}</b> <span className="text-muted-foreground">of {active.length} reports written</span>
-          </p>
-          <div role="img" aria-label={STATUS_ORDER.map((s) => `${counts[s]} ${STATUS_LABEL[s].toLowerCase()}`).join(", ")} className="flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-border">
-            {STATUS_ORDER.filter((s) => counts[s] > 0).map((s) => (
-              <div key={s} className="h-full" style={{ width: `${(counts[s] / Math.max(1, active.length)) * 100}%`, background: STATUS_FILL[s] }} />
-            ))}
-          </div>
-          <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-            {STATUS_ORDER.filter((s) => counts[s] > 0).map((s) => (
-              <li key={s} className="flex items-center gap-2">
-                <span className="size-2.5 rounded-[3px]" style={{ background: STATUS_FILL[s] }} aria-hidden />
-                <span className="flex-1 text-muted-foreground">{STATUS_LABEL[s]}</span>
-                <b>{counts[s]}</b>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </CardContent>
-    </Card>
+        <p className="text-sm">
+          <b>{breakdown.length ? breakdown.join(" · ") : "No reports yet"}</b> <span className="text-muted-foreground">Each child gets one learning report every semester.</span>
+        </p>
+      </Card>
+    </section>
   );
 }
 
@@ -362,7 +506,7 @@ function MoveChild({ child, classes, detail, open, onOpenChange }: { child: Clas
   // A child in the wrong class by birthday moves to a class of the level their birthday gives.
   const level = child.level ?? detail.level;
   const others = classes.filter((k) => k.id !== detail.id && k.level === level);
-  const [to, setTo] = useState<number | null>(others[0]?.id ?? null);
+  const [to, setTo] = useState<number | null>(null);
   const target = others.find((k) => k.id === to) ?? null;
   const wrongLevel = level !== detail.level;
   return (
@@ -436,6 +580,9 @@ const itemCls = "items-start gap-3 py-2";
 const itemTitle = "block font-semibold leading-tight";
 const itemHint = "block text-xs font-normal text-muted-foreground";
 
+/** What the button beside a child says, from how far their learning report is. */
+const reportAction = (c: ClassChild) => (c.hasReport ? "Open report" : c.status === "not_started" ? "Start report" : c.status === "ready" ? "Write report" : "Continue");
+
 function ChildRow({ child, detail, classes }: { child: ClassChild; detail: ClassDetail; classes: ClassSummary[] }) {
   const { busy, act } = useAct();
   const router = useRouter();
@@ -466,18 +613,26 @@ function ChildRow({ child, detail, classes }: { child: ClassChild; detail: Class
           </p>
         )}
       </div>
-      <Badge className={cn("h-7 px-3 text-[13px] font-bold", child.left ? "border-transparent bg-secondary text-muted-foreground" : STATUS_TONE[child.status])}>{child.left ? "Left" : STATUS_LABEL[child.status]}</Badge>
+      <span className="md:w-[150px] md:shrink-0">
+        <Badge className={cn("h-7 px-3 text-[13px] font-bold", child.left ? "border-transparent bg-secondary text-muted-foreground" : STATUS_TONE[child.status])}>{child.left ? "Left" : STATUS_LABEL[child.status]}</Badge>
+      </span>
       {child.left ? (
         <Button variant="outline" disabled={busy} className="h-10 font-semibold" onClick={() => act(() => adminSend("POST", `/reviews/${child.reviewId}/left`, { left: false }), `${child.name} is back in ${detail.name}.`)}>
           Return to class
         </Button>
       ) : (
         <>
-          {misplaced && child.level && (
-            <Button variant="outline" className="h-10 border-warn/60 bg-warn/10 font-semibold text-warn-foreground hover:bg-warn/20" onClick={() => setDialog("move")}>
-              Move to {child.level} <ArrowRight />
-            </Button>
-          )}
+          <span className="md:w-[140px] md:shrink-0">
+            {misplaced && child.level ? (
+              <Button variant="outline" className="h-10 w-full border-warn/60 bg-warn/10 font-semibold text-warn-foreground hover:bg-warn/20" onClick={() => setDialog("move")}>
+                Move to {child.level} <ArrowRight />
+              </Button>
+            ) : (
+              <Button asChild variant="outline" className="h-10 w-full font-semibold text-foreground hover:text-foreground">
+                <Link href={child.hasReport ? `/child/${child.reviewId}/report` : `/child/${child.reviewId}`}>{reportAction(child)}</Link>
+              </Button>
+            )}
+          </span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="-mr-2 text-muted-foreground" aria-label={`Options for ${child.name}`}>
@@ -485,6 +640,15 @@ function ChildRow({ child, detail, classes }: { child: ClassChild; detail: Class
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
+              <DropdownMenuItem className={itemCls} asChild>
+                <Link href={`/children/${child.childId}`}>
+                  <UserRound className="mt-0.5" />
+                  <span>
+                    <span className={itemTitle}>View profile</span>
+                    <span className={itemHint}>Parents, past reports, notes</span>
+                  </span>
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem className={itemCls} onSelect={() => setDialog("edit")}>
                 <Pencil className="mt-0.5" />
                 <span>
@@ -557,11 +721,14 @@ export function ClassChildren({ detail, classes, className }: { detail: ClassDet
   return (
     <Card className={cn("gap-0 overflow-hidden py-0 shadow-none", className)}>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-5 sm:px-6">
-        <div className="flex items-center gap-2.5">
-          <h2 className="font-heading text-[22px] font-semibold">Children</h2>
-          <Badge variant="secondary" className="h-7 min-w-7 px-2 text-[13px] font-bold">
-            {active.length}
-          </Badge>
+        <div className="grid gap-0.5">
+          <div className="flex items-center gap-2.5">
+            <h2 className="font-heading text-2xl font-semibold">Children in this class</h2>
+            <Badge variant="secondary" className="h-7 min-w-7 px-2 text-[13px] font-bold">
+              {active.length}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">Click a child’s name to open their learning report.</p>
         </div>
         {active.length > 5 && (
           <div className="relative w-full sm:w-60">
@@ -570,6 +737,14 @@ export function ClassChildren({ detail, classes, className }: { detail: ClassDet
           </div>
         )}
       </div>
+      {active.length > 0 && (
+        <div className="hidden items-center gap-4 border-y bg-secondary/40 px-6 py-2.5 text-xs font-extrabold uppercase tracking-wider text-muted-foreground md:flex" aria-hidden>
+          <span className="flex-1">Child</span>
+          <span className="w-[150px]">Learning report</span>
+          <span className="w-[140px]" />
+          <span className="w-10" />
+        </div>
+      )}
       {active.length === 0 ? (
         <p className="border-t px-6 py-8 text-center text-sm text-muted-foreground">No children in this class yet. Use “Add a child” to place the first one.</p>
       ) : shown.length === 0 ? (
@@ -585,7 +760,7 @@ export function ClassChildren({ detail, classes, className }: { detail: ClassDet
         <Collapsible className="group/left border-t">
           <CollapsibleTrigger className="flex min-h-13 w-full items-center gap-2 px-4 text-left text-sm font-semibold text-muted-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50 sm:px-6">
             <ChevronRight className="size-4 transition-transform group-data-[state=open]/left:rotate-90" aria-hidden />
-            Left the school ({left.length})
+            Children who have left the school ({left.length})
           </CollapsibleTrigger>
           <CollapsibleContent>
             <ul>

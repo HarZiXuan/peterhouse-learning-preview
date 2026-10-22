@@ -5,12 +5,14 @@ import { CLASS_LEVEL_KEYS, type ClassLevel } from "@peterhouse/shared";
 import { audit } from "../audit";
 import { currentUser, requireAdmin } from "../auth";
 import { many } from "../db";
-import { idParam, parse } from "../http";
+import { HttpError, idParam, parse } from "../http";
 import { createUser, listUsers, resetPassword, unlockUser, updateUser } from "../domain/users";
-import { approvalExtras, approvalsView, approve, requestChanges, takeOver } from "../domain/approval";
-import { addChild, classDetail, classesView, createClass, deleteClass, moveChild, setChildLeft, setClassStaff, updateChild, updateClass } from "../domain/classes";
+import { approvalExtras, approvalsView, approve, periodsView, requestChanges, takeOver } from "../domain/approval";
+import { childProfile, updateChildInfo } from "../domain/children";
+import { addChild, classDetail, classesView, createClass, deleteClass, moveChild, setChildLeft, setClassStaff, setSubjectTeacher, updateChild, updateClass } from "../domain/classes";
 import {
   addQuestion,
+  setQuestionLevels,
   discardDraft,
   moveQuestion,
   publishQuestions,
@@ -22,10 +24,21 @@ import {
 } from "../domain/questions";
 
 export const adminRouter = Router();
+
+const LevelKey = z.enum(CLASS_LEVEL_KEYS as [ClassLevel, ...ClassLevel[]]);
 adminRouter.use(requireAdmin);
 
 adminRouter.get("/users", async (_req, res) => {
   res.json({ users: await listUsers() });
+});
+
+/** One teacher: their classes and subjects, and every report in those classes this semester, wherever it has got to. */
+adminRouter.get("/users/:id/detail", async (req, res) => {
+  const id = idParam(req.params.id);
+  const user = (await listUsers()).find((u) => u.id === id);
+  if (!user) throw new HttpError(404, "There is no such person.");
+  const views = await Promise.all((["waiting", "changes", "approved", "not_submitted"] as const).map((status) => approvalsView({ status, teacherId: id })));
+  res.json({ user, reports: views.flatMap((v) => v.items) });
 });
 
 const NewUser = z.object({
@@ -76,8 +89,14 @@ adminRouter.get("/questions", async (_req, res) => {
 });
 
 adminRouter.post("/questions", async (req, res) => {
-  const { areaKey, text } = parse(z.object({ areaKey: z.string().max(40), text: z.string().max(400) }), req.body);
-  res.status(201).json({ key: await addQuestion(req, currentUser(req), areaKey, text) });
+  const { areaKey, text, levels } = parse(z.object({ areaKey: z.string().max(40), text: z.string().max(400), levels: z.array(LevelKey).max(5).optional() }), req.body);
+  res.status(201).json({ key: await addQuestion(req, currentUser(req), areaKey, text, levels) });
+});
+
+adminRouter.put("/questions/:key/levels", async (req, res) => {
+  const { levels } = parse(z.object({ levels: z.array(LevelKey).max(5) }), req.body);
+  await setQuestionLevels(req, currentUser(req), req.params.key, levels);
+  res.json({ ok: true });
 });
 
 adminRouter.put("/questions/:key", async (req, res) => {
@@ -118,7 +137,6 @@ adminRouter.post("/questions/publish", async (req, res) => {
 
 // ─── Classes and children (CHANGES-TO-MAKE change 4) ──────────────────────
 
-const LevelKey = z.enum(CLASS_LEVEL_KEYS as [ClassLevel, ...ClassLevel[]]);
 const Birthday = z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/);
 
 adminRouter.get("/classes", async (_req, res) => {
@@ -159,18 +177,60 @@ adminRouter.put("/classes/:id/staff", async (req, res) => {
   res.json({ ok: true });
 });
 
+// A subject teacher of a class and the subjects they teach there (change 12). No subjects takes them off the class.
+adminRouter.put("/classes/:id/subject-teachers/:userId", async (req, res) => {
+  const id = idParam(req.params.id);
+  const userId = idParam(req.params.userId);
+  const { subjectIds } = parse(z.object({ subjectIds: z.array(z.number().int().positive()).max(20) }), req.body);
+  await setSubjectTeacher(id, userId, subjectIds);
+  await audit(req, currentUser(req).id, "class.subject_teacher_set", { detail: `#${id} teacher #${userId} subjects ${subjectIds.join(",") || "none"}` });
+  res.json({ ok: true });
+});
+
 const ChildDetails = z.object({
-  name: z.string().max(80),
+  firstName: z.string().max(80),
+  lastName: z.string().max(80),
   chineseName: z.string().max(40),
-  pronoun: z.enum(["she", "he", "they"]),
+  pronoun: z.enum(["she", "he"]),
   dateOfBirth: Birthday,
 });
 
 adminRouter.post("/children", async (req, res) => {
-  const input = parse(ChildDetails.extend({ classId: z.number().int().positive() }), req.body);
+  const input = parse(
+    ChildDetails.extend({
+      classId: z.number().int().positive(),
+      joinedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      guardians: z.array(z.object({ name: z.string().max(100), relationship: z.string().max(40), phone: z.string().max(40), email: z.string().max(200) })).max(6).optional(),
+      notes: z.string().max(4000).optional(),
+    }),
+    req.body,
+  );
   const out = await addChild(input);
   await audit(req, currentUser(req).id, "child.added", { reviewId: out.reviewId, childId: out.childId, detail: `class #${input.classId}` });
   res.status(201).json({ reviewId: out.reviewId });
+});
+
+adminRouter.get("/children/:id", async (req, res) => {
+  const id = idParam(req.params.id);
+  const profile = await childProfile(id);
+  await audit(req, currentUser(req).id, "child.profile_viewed", { childId: id });
+  res.json(profile);
+});
+
+adminRouter.put("/children/:id/info", async (req, res) => {
+  const id = idParam(req.params.id);
+  const info = parse(
+    z.object({
+      joinedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      guardians: z.array(z.object({ name: z.string().max(100), relationship: z.string().max(40), phone: z.string().max(40), email: z.string().max(200) })).max(6),
+      notes: z.string().max(4000),
+    }),
+    req.body,
+  );
+  await updateChildInfo(id, info);
+  // The details themselves name parents and phone numbers, so they stay out of the log.
+  await audit(req, currentUser(req).id, "child.info_updated", { childId: id });
+  res.json({ ok: true });
 });
 
 adminRouter.put("/reviews/:id/child", async (req, res) => {
@@ -201,10 +261,14 @@ adminRouter.post("/reviews/:id/left", async (req, res) => {
 
 adminRouter.get("/approvals", async (req, res) => {
   const q = parse(
-    z.object({ status: z.enum(["waiting", "changes", "approved", "not_submitted"]).optional(), classId: z.coerce.number().int().positive().optional(), teacherId: z.coerce.number().int().positive().optional() }),
+    z.object({ status: z.enum(["waiting", "changes", "approved", "not_submitted"]).optional(), classId: z.coerce.number().int().positive().optional(), teacherId: z.coerce.number().int().positive().optional(), termId: z.coerce.number().int().positive().optional() }),
     req.query,
   );
   res.json(await approvalsView(q));
+});
+
+adminRouter.get("/periods", async (_req, res) => {
+  res.json(await periodsView());
 });
 
 adminRouter.get("/approvals/:id", async (req, res) => {

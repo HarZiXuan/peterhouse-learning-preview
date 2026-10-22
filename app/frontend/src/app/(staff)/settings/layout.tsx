@@ -15,7 +15,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Peterhouse Learning Review</p>
           <h1 className="mt-1 font-heading text-3xl font-bold tracking-tight md:text-4xl">Settings</h1>
-          <p className="mt-1 text-muted-foreground">{admin ? "Your account, the school’s reports, people and semesters. All in one place." : "Your account and what the school prints on reports."}</p>
+          <p className="mt-1 text-muted-foreground">{admin ? "Your account, the school’s reports, people and semesters. All in one place." : "Your account and password."}</p>
         </div>
         <span className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-sm text-muted-foreground">
           <Icon name="shield" size={15} />

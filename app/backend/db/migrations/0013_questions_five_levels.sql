@@ -1,0 +1,130 @@
+-- Five age groups, five question lists (replaces the two sets of change 8). Each level steps up from the one before,
+-- from PG (turning 2) to K2 (turning 6, the year before Primary 1). The wording is a placeholder for a Peterhouse
+-- teacher to approve, and matches DEFAULT_RUBRIC in shared/src/rubric-default.ts.
+--
+-- These are changes to the DRAFT: an administrator publishes them on the Questions page. Questions that were ever
+-- published are retired, so past reports keep their wording; ones never published are removed. On a new database the
+-- question bank is empty here and the app seeds the same questions itself.
+
+CREATE TEMP TABLE five_levels (domain text, key text, text text, pos integer, levels text[]) ON COMMIT DROP;
+INSERT INTO five_levels VALUES
+    ('eng', 'eng_pg_1', '{name} follows simple one-step instructions.', 0, '{PG}'),
+    ('eng', 'eng_pg_2', '{name} uses two or three words together to say what {he/she/they} wants.', 1, '{PG}'),
+    ('eng', 'eng_pg_3', '{name} joins in English songs and rhymes.', 2, '{PG}'),
+    ('eng', 'eng_pg_4', '{name} enjoys looking at picture books with an adult.', 3, '{PG}'),
+    ('eng', 'eng_n1_1', '{name} speaks in short sentences.', 4, '{N1}'),
+    ('eng', 'eng_n1_2', '{name} recognises and names most letters of the alphabet.', 5, '{N1}'),
+    ('eng', 'eng_n1_3', '{name} answers “who”, “what” and “where” questions about a story.', 6, '{N1}'),
+    ('eng', 'eng_n1_4', '{name} holds a crayon and draws lines and circles.', 7, '{N1}'),
+    ('eng', 'eng_n2_1', '{name} knows the sound each letter makes.', 8, '{N2}'),
+    ('eng', 'eng_n2_2', '{name} reads and spells simple three-letter words, such as “cat” and “pen”.', 9, '{N2}'),
+    ('eng', 'eng_n2_3', '{name} writes {his/her/their} own name and copies letters correctly.', 10, '{N2}'),
+    ('eng', 'eng_n2_4', '{name} retells a familiar story in order.', 11, '{N2}'),
+    ('eng', 'eng_n2_5', '{name} speaks in full sentences to share ideas.', 12, '{N2}'),
+    ('eng', 'eng_k1_1', '{name} reads simple sentences and common sight words.', 13, '{K1}'),
+    ('eng', 'eng_k1_2', '{name} blends sounds to read new words, including “sh”, “ch” and “st”.', 14, '{K1}'),
+    ('eng', 'eng_k1_3', '{name} writes words and short sentences with spaces between words.', 15, '{K1}'),
+    ('eng', 'eng_k1_4', '{name} answers questions about a story read aloud.', 16, '{K1}'),
+    ('eng', 'eng_k1_5', '{name} speaks clearly in front of the class.', 17, '{K1}'),
+    ('eng', 'eng_k2_1', '{name} reads short storybooks on {his/her/their} own, with expression.', 18, '{K2}'),
+    ('eng', 'eng_k2_2', '{name} understands what {he/she/they} reads and answers “why” and “how” questions about it.', 19, '{K2}'),
+    ('eng', 'eng_k2_3', '{name} writes three to five sentences with capital letters and full stops.', 20, '{K2}'),
+    ('eng', 'eng_k2_4', '{name} spells common words correctly.', 21, '{K2}'),
+    ('eng', 'eng_k2_5', '{name} uses new words and joins ideas with “and”, “because” and “but”.', 22, '{K2}'),
+    ('chi', 'chi_pg_1', '{name} understands simple instructions in Chinese.', 0, '{PG}'),
+    ('chi', 'chi_pg_2', '{name} joins in Chinese songs and rhymes.', 1, '{PG}'),
+    ('chi', 'chi_pg_3', '{name} says a few familiar Chinese words.', 2, '{PG}'),
+    ('chi', 'chi_n1_1', '{name} names everyday objects in Chinese.', 3, '{N1}'),
+    ('chi', 'chi_n1_2', '{name} answers simple questions in short Chinese phrases.', 4, '{N1}'),
+    ('chi', 'chi_n1_3', '{name} sings Chinese songs and rhymes from memory.', 5, '{N1}'),
+    ('chi', 'chi_n1_4', '{name} recognises a few simple characters, such as 人, 大 and 口.', 6, '{N1}'),
+    ('chi', 'chi_n2_1', '{name} speaks in short Chinese sentences.', 7, '{N2}'),
+    ('chi', 'chi_n2_2', '{name} recognises about fifty common Chinese characters.', 8, '{N2}'),
+    ('chi', 'chi_n2_3', '{name} traces and writes the basic strokes correctly.', 9, '{N2}'),
+    ('chi', 'chi_n2_4', '{name} retells a short story in Chinese with the help of pictures.', 10, '{N2}'),
+    ('chi', 'chi_k1_1', '{name} reads about a hundred and fifty common characters and short phrases.', 11, '{K1}'),
+    ('chi', 'chi_k1_2', '{name} writes simple characters in the correct stroke order.', 12, '{K1}'),
+    ('chi', 'chi_k1_3', '{name} reads and says Hanyu Pinyin initials and finals.', 13, '{K1}'),
+    ('chi', 'chi_k1_4', '{name} talks about a picture in full Chinese sentences.', 14, '{K1}'),
+    ('chi', 'chi_k2_1', '{name} reads short Chinese passages and simple storybooks.', 15, '{K2}'),
+    ('chi', 'chi_k2_2', '{name} writes words and short sentences in Chinese.', 16, '{K2}'),
+    ('chi', 'chi_k2_3', '{name} uses Hanyu Pinyin to read unfamiliar characters.', 17, '{K2}'),
+    ('chi', 'chi_k2_4', '{name} answers questions about a Chinese passage.', 18, '{K2}'),
+    ('chi', 'chi_k2_5', '{name} shares {his/her/their} own ideas and feelings in Chinese.', 19, '{K2}'),
+    ('mat', 'mat_pg_1', '{name} sorts objects by colour, size or shape.', 0, '{PG}'),
+    ('mat', 'mat_pg_2', '{name} says “more” and “bigger” when comparing things.', 1, '{PG}'),
+    ('mat', 'mat_pg_3', '{name} counts from one to five with an adult.', 2, '{PG}'),
+    ('mat', 'mat_pg_4', '{name} fits shapes into a shape sorter or puzzle.', 3, '{PG}'),
+    ('mat', 'mat_n1_1', '{name} counts objects up to ten, one by one.', 4, '{N1}'),
+    ('mat', 'mat_n1_2', '{name} recognises the numerals one to ten.', 5, '{N1}'),
+    ('mat', 'mat_n1_3', '{name} names a circle, a square and a triangle.', 6, '{N1}'),
+    ('mat', 'mat_n1_4', '{name} copies and continues a simple pattern, such as red-blue-red-blue.', 7, '{N1}'),
+    ('mat', 'mat_n2_1', '{name} counts, reads and writes numbers to twenty.', 8, '{N2}'),
+    ('mat', 'mat_n2_2', '{name} says one more and one less than a number up to twenty.', 9, '{N2}'),
+    ('mat', 'mat_n2_3', '{name} adds two small groups by counting them all.', 10, '{N2}'),
+    ('mat', 'mat_n2_4', '{name} compares and orders things by length and size.', 11, '{N2}'),
+    ('mat', 'mat_n2_5', '{name} names flat shapes and describes their sides and corners.', 12, '{N2}'),
+    ('mat', 'mat_k1_1', '{name} counts, reads and writes numbers to a hundred, and counts in twos, fives and tens.', 13, '{K1}'),
+    ('mat', 'mat_k1_2', '{name} adds and subtracts within ten, and knows the number bonds to ten.', 14, '{K1}'),
+    ('mat', 'mat_k1_3', '{name} solves simple word problems with pictures.', 15, '{K1}'),
+    ('mat', 'mat_k1_4', '{name} tells the time to the hour and names the days of the week.', 16, '{K1}'),
+    ('mat', 'mat_k1_5', '{name} recognises coins and their values.', 17, '{K1}'),
+    ('mat', 'mat_k2_1', '{name} adds and subtracts within twenty without objects, and within a hundred using tens and ones.', 18, '{K2}'),
+    ('mat', 'mat_k2_2', '{name} solves one-step addition and subtraction word problems.', 19, '{K2}'),
+    ('mat', 'mat_k2_3', '{name} understands place value in tens and ones.', 20, '{K2}'),
+    ('mat', 'mat_k2_4', '{name} tells the time to the hour and half hour, and reads a calendar.', 21, '{K2}'),
+    ('mat', 'mat_k2_5', '{name} uses money to pay and work out change in simple sums.', 22, '{K2}'),
+    ('sed', 'sed_pg_1', '{name} settles into class and says goodbye to {his/her/their} parents happily.', 0, '{PG}'),
+    ('sed', 'sed_pg_2', '{name} shows {his/her/their} feelings and takes comfort from teachers.', 1, '{PG}'),
+    ('sed', 'sed_pg_3', '{name} plays alongside friends.', 2, '{PG}'),
+    ('sed', 'sed_pg_4', '{name} begins to follow the class routines.', 3, '{PG}'),
+    ('sed', 'sed_n1_1', '{name} takes turns and shares with reminders.', 4, '{N1}'),
+    ('sed', 'sed_n1_2', '{name} names basic feelings, such as happy, sad and angry.', 5, '{N1}'),
+    ('sed', 'sed_n1_3', '{name} tidies up and follows the class routines.', 6, '{N1}'),
+    ('sed', 'sed_n1_4', '{name} asks for help when {he/she/they} needs it.', 7, '{N1}'),
+    ('sed', 'sed_n2_1', '{name} shares and takes turns without reminders.', 8, '{N2}'),
+    ('sed', 'sed_n2_2', '{name} plays well with friends in small groups.', 9, '{N2}'),
+    ('sed', 'sed_n2_3', '{name} says how {he/she/they} feels and why.', 10, '{N2}'),
+    ('sed', 'sed_n2_4', '{name} shows kindness and cares for friends.', 11, '{N2}'),
+    ('sed', 'sed_k1_1', '{name} works with a group towards a shared goal.', 12, '{K1}'),
+    ('sed', 'sed_k1_2', '{name} solves small disagreements with words.', 13, '{K1}'),
+    ('sed', 'sed_k1_3', '{name} looks after {his/her/their} own belongings and finishes tasks on {his/her/their} own.', 14, '{K1}'),
+    ('sed', 'sed_k1_4', '{name} keeps trying when something is difficult.', 15, '{K1}'),
+    ('sed', 'sed_k2_1', '{name} follows instructions and works on {his/her/their} own for a sustained time.', 16, '{K2}'),
+    ('sed', 'sed_k2_2', '{name} leads and cooperates in group activities.', 17, '{K2}'),
+    ('sed', 'sed_k2_3', '{name} manages {his/her/their} feelings and calms down on {his/her/their} own.', 18, '{K2}'),
+    ('sed', 'sed_k2_4', '{name} shows responsibility and is ready for Primary One routines.', 19, '{K2}'),
+    ('enr', 'enr_pg_1', '{name} explores messy play, paint and play dough.', 0, '{PG}'),
+    ('enr', 'enr_pg_2', '{name} moves to music and joins in action songs.', 1, '{PG}'),
+    ('enr', 'enr_pg_3', '{name} runs, climbs and balances in outdoor play.', 2, '{PG}'),
+    ('enr', 'enr_n1_1', '{name} uses scissors, glue and crayons with control.', 3, '{N1}'),
+    ('enr', 'enr_n1_2', '{name} sings songs and keeps a simple beat.', 4, '{N1}'),
+    ('enr', 'enr_n1_3', '{name} throws, kicks and catches a large ball.', 5, '{N1}'),
+    ('enr', 'enr_n1_4', '{name} shows curiosity and asks questions.', 6, '{N1}'),
+    ('enr', 'enr_n2_1', '{name} creates {his/her/their} own art and talks about it.', 7, '{N2}'),
+    ('enr', 'enr_n2_2', '{name} performs songs and actions with the class.', 8, '{N2}'),
+    ('enr', 'enr_n2_3', '{name} hops, skips and balances with control.', 9, '{N2}'),
+    ('enr', 'enr_n2_4', '{name} explores and talks about nature and science activities.', 10, '{N2}'),
+    ('enr', 'enr_k1_1', '{name} plans and makes art and craft projects.', 11, '{K1}'),
+    ('enr', 'enr_k1_2', '{name} takes part in performances with confidence.', 12, '{K1}'),
+    ('enr', 'enr_k1_3', '{name} shows good coordination in sports and games.', 13, '{K1}'),
+    ('enr', 'enr_k1_4', '{name} makes predictions and talks about simple experiments.', 14, '{K1}'),
+    ('enr', 'enr_k2_1', '{name} expresses ideas creatively through art, music and drama.', 15, '{K2}'),
+    ('enr', 'enr_k2_2', '{name} performs confidently in front of an audience.', 16, '{K2}'),
+    ('enr', 'enr_k2_3', '{name} plays team games and follows the rules.', 17, '{K2}'),
+    ('enr', 'enr_k2_4', '{name} investigates questions and explains what {he/she/they} found out.', 18, '{K2}');
+
+DELETE FROM questions q
+ WHERE q.key NOT IN (SELECT key FROM five_levels)
+   AND NOT EXISTS (
+     SELECT 1 FROM rubric_versions v, jsonb_array_elements(v.snapshot->'areas') a, jsonb_array_elements(a->'skills') s
+      WHERE s->>'key' = q.key);
+
+UPDATE questions SET active = false, retired_at = now()
+ WHERE active AND key NOT IN (SELECT key FROM five_levels);
+
+INSERT INTO questions (domain_id, key, text_template, position, levels)
+SELECT d.id, n.key, n.text, n.pos, n.levels
+  FROM five_levels n
+  JOIN domains d ON d.key = n.domain
+ WHERE NOT EXISTS (SELECT 1 FROM questions x WHERE x.key = n.key);

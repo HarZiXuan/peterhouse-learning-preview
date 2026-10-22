@@ -1,13 +1,14 @@
 import express, { Router } from "express";
 import { z } from "zod";
 import type { AreaAnswer, ReportSection, ReportView, ReviewView } from "@peterhouse/shared";
-import { PHOTOS_PER_AREA, semesterLabel } from "@peterhouse/shared";
+import { COVER_PHOTO_KEY, PHOTOS_PER_AREA, semesterLabel } from "@peterhouse/shared";
 import { audit } from "../audit";
 import { createSession, currentUser, destroySession } from "../auth";
 import { HttpError, idParam, parse } from "../http";
-import { buildReportData, editParagraph, getReviewForEdit, getReviewForUser, loadAnswers, openReview, refreshReviewStatus, rewriteParagraph, saveArea, setChineseName, writeDraft } from "../domain/reviews";
+import { buildReportData, editParagraph, getReviewForEdit, isSubjectOnly, getReviewForUser, loadAnswers, openReview, refreshReviewStatus, rewriteParagraph, saveArea, setChineseName, writeDraft } from "../domain/reviews";
 import { submitForReview, takeBack, workflowFor } from "../domain/approval";
-import { addPhoto, deletePhoto, hasPhotoConsent, listPhotos, photoReviewId, photoView, readPhoto, setPhotoConsent } from "../domain/photos";
+import { one } from "../db";
+import { addPhoto, deletePhoto, listPhotos, photoReviewId, photoView, readPhoto } from "../domain/photos";
 import { renderReportPdf } from "../domain/pdf";
 import { getSchool } from "../domain/school";
 
@@ -28,7 +29,7 @@ reviewsRouter.get("/reviews/:id", async (req, res) => {
   const { answers } = await loadAnswers(r.id, r.rubric);
   const view: ReviewView = {
     reviewId: r.id,
-    childName: r.preferred_name,
+    childName: r.legal_name,
     chineseName: r.chinese_name,
     pronoun: r.pronoun,
     status: r.status,
@@ -36,11 +37,11 @@ reviewsRouter.get("/reviews/:id", async (req, res) => {
     answers,
     hasReport: !!r.draft,
     photos: (await listPhotos(r.id)).map(photoView),
-    photoConsent: await hasPhotoConsent(r.id),
     photosPerArea: PHOTOS_PER_AREA,
     semester: `${semesterLabel(r.season)} ${r.year}`,
     updatedAt: r.updated_at,
     workflow: await workflowFor(user, r),
+    subjectOnly: await isSubjectOnly(user, r),
   };
   await audit(req, user.id, "review.viewed", { reviewId: r.id, childId: r.child_id });
   res.json(view);
@@ -86,7 +87,7 @@ reviewsRouter.get("/reviews/:id/report", async (req, res) => {
   ];
   const view: ReportView = {
     reviewId: r.id,
-    childName: r.preferred_name,
+    childName: r.legal_name,
     data: await buildReportData(r),
     school: await getSchool(),
     sections,
@@ -141,24 +142,13 @@ reviewsRouter.get("/reviews/:id/pdf", async (req, res) => {
 reviewsRouter.post("/reviews/:id/photos", express.raw({ type: "image/*", limit: "25mb" }), async (req, res) => {
   const user = currentUser(req);
   const id = idParam(req.params.id);
-  const r = await getReviewForEdit(user, id);
   const area = String(req.query.area ?? "");
-  if (!r.rubric.areas.some((a) => a.key === area)) throw new HttpError(400, "Choose the learning area for this photo.");
+  const r = await getReviewForEdit(user, id, undefined, area);
+  if (area !== COVER_PHOTO_KEY && !r.rubric.areas.some((a) => a.key === area)) throw new HttpError(400, "Choose the learning area (or the cover) for this photo.");
   if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new HttpError(400, "No photo was sent.");
   await addPhoto(id, area, req.body);
-  // Photos can be added without consent: they stay in the app, and the PDF shows the child's initial instead.
   await audit(req, user.id, "photo.added", { reviewId: id, childId: r.child_id, detail: area });
-  res.json({ photos: (await listPhotos(id)).map(photoView), consent: await hasPhotoConsent(id) });
-});
-
-reviewsRouter.put("/reviews/:id/photo-consent", async (req, res) => {
-  const user = currentUser(req);
-  const id = idParam(req.params.id);
-  const r = await getReviewForEdit(user, id);
-  const { consent } = parse(z.object({ consent: z.boolean() }), req.body);
-  await setPhotoConsent(id, consent);
-  await audit(req, user.id, "photo.consent_changed", { reviewId: id, childId: r.child_id, detail: String(consent) });
-  res.json({ ok: true });
+  res.json({ photos: (await listPhotos(id)).map(photoView) });
 });
 
 reviewsRouter.get("/photos/:photoId", async (req, res) => {
@@ -176,7 +166,8 @@ reviewsRouter.delete("/reviews/:id/photos/:photoId", async (req, res) => {
   const user = currentUser(req);
   const id = idParam(req.params.id);
   const photoId = idParam(req.params.photoId);
-  const r = await getReviewForEdit(user, id);
+  const photoArea = (await one<{ area_key: string | null }>("SELECT area_key FROM review_photos WHERE id = $1", [photoId]))?.area_key ?? undefined;
+  const r = await getReviewForEdit(user, id, undefined, photoArea);
   if ((await photoReviewId(photoId)) !== id) throw new HttpError(404, "Not found.");
   await deletePhoto(photoId);
   await audit(req, user.id, "photo.removed", { reviewId: id, childId: r.child_id });

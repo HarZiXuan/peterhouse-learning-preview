@@ -1,3 +1,5 @@
+import type { ClassLevel } from "./classes";
+
 /**
  * The fixed rating scale (Teacher Questions v0.3, section 1). It is not admin-editable, so the writer
  * always reads a score the same way. Numbers are stored but never shown to families.
@@ -24,15 +26,20 @@ export type Level = 0 | 1 | 2 | 3 | 4 | 5;
 export const NOTE_MAX = 140;
 export const LOVE_MAX = 300;
 export const HOME_PICKS_MAX = 2;
-export const PHOTOS_PER_AREA = 3;
+/** The report has room for one photo on each learning page, and one more for the cover. */
+export const PHOTOS_PER_AREA = 1;
+/** The `area_key` of the photo chosen for the cover of the report. */
+export const COVER_PHOTO_KEY = "cover";
 export const QUESTIONS_MIN = 3;
 export const QUESTIONS_MAX = 6;
 
 export type Skill = {
   /** Permanent hidden ID ("eng_1"). Rewording keeps it; a different skill gets a new one. */
   key: string;
-  /** "{name} listens well and responds in a group." {name} and {he/she/they} are filled in for the child. */
+  /** "{name} listens well and responds in a group." {name} and {he/she} are filled in for the child. */
   text: string;
+  /** The levels this question is asked at (CHANGES-TO-MAKE change 8). Missing means every level, as in older sets. */
+  levels?: ClassLevel[];
 };
 
 export type Area = {
@@ -55,11 +62,13 @@ export type Rubric = {
   version: number;
   areas: Area[];
   neverUse: string[];
+  /** Set on a review's frozen copy: the level whose questions it holds. */
+  level?: ClassLevel;
 };
 
 export type Role = "admin" | "teacher";
 export type ClassRole = "lead" | "co";
-export type Pronoun = "she" | "he" | "they";
+export type Pronoun = "she" | "he";
 export type ReviewStatus = "not_started" | "draft" | "ready" | "written" | "submitted" | "changes_requested" | "approved";
 export type TermStatus = "open" | "closed" | "locked";
 

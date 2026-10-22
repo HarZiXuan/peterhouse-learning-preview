@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import type { AuditEntry, DraftDomain, DraftQuestion, QuestionBankView } from "@peterhouse/shared";
-import { QUESTIONS_MAX, QUESTIONS_MIN } from "@peterhouse/shared";
-import { Icon, type IconName } from "@/components/icons";
+import type { DraftDomain, DraftQuestion, QuestionBankView } from "@peterhouse/shared";
+import { CLASS_LEVELS, CLASS_LEVEL_KEYS, QUESTIONS_MAX, QUESTIONS_MIN, type ClassLevel } from "@peterhouse/shared";
+import { Icon } from "@/components/icons";
 import { timeAgo } from "@/components/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -14,9 +14,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { TAB, TAB_NAV } from "@/components/ui/tab-styles";
 import {
   addQuestionAction,
+  setQuestionLevelsAction,
   discardQuestionsAction,
   moveQuestionAction,
   restoreQuestionAction,
@@ -25,7 +29,7 @@ import {
   updateDomainAction,
 } from "../actions";
 
-/** Shows {name} and {he/she/they} as tokens, so the admin sees exactly what is filled in. */
+/** Shows {name} and {he/she} as tokens, so the admin sees exactly what is filled in. */
 export function Template({ text }: { text: string }) {
   return (
     <>
@@ -39,42 +43,6 @@ export function Template({ text }: { text: string }) {
         ),
       )}
     </>
-  );
-}
-
-const ACTIVITY: Record<string, { icon: IconName; verb: (d: string) => string }> = {
-  "questions.added": { icon: "plus", verb: (d) => `added ${d}` },
-  "questions.reworded": { icon: "edit", verb: (d) => `reworded ${d}` },
-  "questions.replaced": { icon: "edit", verb: (d) => `replaced ${d} (a different skill)` },
-  "questions.retired": { icon: "box", verb: (d) => `retired ${d}` },
-  "questions.removed": { icon: "box", verb: (d) => `removed draft question ${d}` },
-  "questions.restored": { icon: "restore", verb: (d) => `restored ${d}` },
-  "questions.moved": { icon: "up", verb: (d) => `moved ${d}` },
-  "questions.prompt_changed": { icon: "edit", verb: (d) => `reworded ${d}` },
-  "questions.home_ideas_changed": { icon: "edit", verb: (d) => `changed the home ideas (${d})` },
-  "questions.discarded": { icon: "restore", verb: () => "discarded the draft" },
-  "questions.published": { icon: "publish", verb: (d) => `published ${d}` },
-};
-
-export function ActivityList({ entries }: { entries: AuditEntry[] }) {
-  if (!entries.length) return <p className="small muted">No changes yet.</p>;
-  return (
-    <ul className="log">
-      {entries.slice(0, 12).map((e) => {
-        const a = ACTIVITY[e.action] ?? { icon: "edit" as const, verb: (d: string) => `${e.action} ${d}` };
-        return (
-          <li key={e.id}>
-            <span className="ic">
-              <Icon name={a.icon} size={15} />
-            </span>
-            <span>
-              {e.userName ?? "Someone"} {a.verb(e.detail)}
-              <small>{timeAgo(e.at)}</small>
-            </span>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 
@@ -99,15 +67,65 @@ function useAct() {
   return { busy, error, act, setError };
 }
 
-function QuestionRow({ q, first, last, published, onEdit }: { q: DraftQuestion; first: boolean; last: boolean; published: boolean; onEdit: () => void }) {
+/** Each class level asks its own questions; the tabs are views of one list, each question ticked for its levels. */
+export type QuestionSet = "all" | ClassLevel;
+const SETS: Record<QuestionSet, { label: string; levels: ClassLevel[] }> = {
+  all: { label: "All questions", levels: CLASS_LEVEL_KEYS },
+  ...(Object.fromEntries(CLASS_LEVELS.map((l) => [l.key, { label: `${l.key} · age ${l.turns}`, levels: [l.key] }])) as Record<ClassLevel, { label: string; levels: ClassLevel[] }>),
+};
+
+/** The levels a question is asked at, one chip per level. A question keeps at least one. */
+function SetPicker({ levels, onChange, disabled, label }: { levels: ClassLevel[]; onChange: (next: ClassLevel[]) => void; disabled?: boolean; label: string }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1" role="group" aria-label={label}>
+      {CLASS_LEVEL_KEYS.map((l) => {
+        const on = levels.includes(l);
+        return (
+          <button
+            key={l}
+            type="button"
+            aria-pressed={on}
+            disabled={disabled || (on && levels.length === 1)}
+            onClick={() => onChange(on ? levels.filter((x) => x !== l) : CLASS_LEVEL_KEYS.filter((x) => x === l || levels.includes(x)))}
+            className="rounded-full border px-2.5 py-1 text-xs font-bold text-muted-foreground transition-colors hover:text-foreground aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground disabled:opacity-60"
+          >
+            {l}
+          </button>
+        );
+      })}
+    </span>
+  );
+}
+
+function QuestionLevels({ q }: { q: DraftQuestion }) {
+  const { busy, act } = useAct();
+  return (
+    <SetPicker
+      label="Asked in"
+      levels={q.levels}
+      disabled={busy}
+      onChange={(next) => act(() => setQuestionLevelsAction(q.key, next), undefined, `Asked at ${next.join(", ")}. Teachers see it once you publish.`)}
+    />
+  );
+}
+
+function QuestionRow({ q, first, last, published, onEdit, canMove }: { q: DraftQuestion; first: boolean; last: boolean; published: boolean; onEdit: () => void; canMove: boolean }) {
   const { busy, error, act } = useAct();
   return (
     <div className="qa-q">
       <div style={{ minWidth: 0 }}>
         <div className="row" style={{ gap: 6 }}>
-          <code className="rounded bg-secondary px-1.5 py-0.5 text-xs font-medium">{q.key}</code>
-          {q.change === "reworded" && <Badge variant="outline" className="font-normal border-warn/50 bg-warn/15 text-foreground">Reworded · same ID</Badge>}
-          {q.change === "added" && <Badge variant="outline" className="font-normal border-success/40 bg-success/10 text-success">New · no comparison next report</Badge>}
+          <QuestionLevels q={q} />
+          {q.change === "reworded" && (
+            <Badge variant="outline" className="cursor-help font-normal border-warn/50 bg-warn/15 text-foreground" title="Same skill in new words, so the next report still compares it with last semester.">
+              Reworded
+            </Badge>
+          )}
+          {q.change === "added" && (
+            <Badge variant="outline" className="cursor-help font-normal border-success/40 bg-success/10 text-success" title="Not published yet. The next report shows no comparison with last semester for it.">
+              New
+            </Badge>
+          )}
         </div>
         <p className="qa-text">
           <Template text={q.text} />
@@ -120,10 +138,10 @@ function QuestionRow({ q, first, last, published, onEdit }: { q: DraftQuestion; 
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
       <div className="qa-tools">
-        <Button variant="ghost" size="icon-sm" type="button" aria-label={`Move ${q.key} up`} disabled={first || busy} onClick={() => act(() => moveQuestionAction(q.key, "up"), undefined, "Moved up. Teachers see it once you publish.")}>
+        <Button variant="ghost" size="icon-sm" type="button" aria-label={`Move ${q.key} up`} hidden={!canMove} disabled={first || busy} onClick={() => act(() => moveQuestionAction(q.key, "up"), undefined, "Moved up. Teachers see it once you publish.")}>
           <Icon name="up" size={18} />
         </Button>
-        <Button variant="ghost" size="icon-sm" type="button" aria-label={`Move ${q.key} down`} disabled={last || busy} onClick={() => act(() => moveQuestionAction(q.key, "down"), undefined, "Moved down. Teachers see it once you publish.")}>
+        <Button variant="ghost" size="icon-sm" type="button" aria-label={`Move ${q.key} down`} hidden={!canMove} disabled={last || busy} onClick={() => act(() => moveQuestionAction(q.key, "down"), undefined, "Moved down. Teachers see it once you publish.")}>
           <Icon name="down" size={18} />
         </Button>
         <Button variant="ghost" size="icon-sm" type="button" aria-label={`Change the wording of ${q.key}`} onClick={onEdit}>
@@ -160,7 +178,7 @@ function EditQuestion({ q, published, onDone }: { q: DraftQuestion; published: b
           <Textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} maxLength={200} autoFocus />
         </label>
         <p className="small muted">
-          Type <span className="tok">{"{name}"}</span> for the child’s name and <span className="tok">{"{he/she/they}"}</span> for the pronoun.
+          Type <span className="tok">{"{name}"}</span> for the child’s name and <span className="tok">{"{he/she}"}</span> for the pronoun.
           {q.change !== "added" && (
             <>
               {" "}
@@ -182,7 +200,7 @@ function EditQuestion({ q, published, onDone }: { q: DraftQuestion; published: b
               <input type="radio" name={`same-${q.key}`} checked={!same} onChange={() => setSame(false)} />
               <span>
                 <b>A different skill</b>
-                <small>Gets a new ID. The next report shows no comparison for it, instead of a misleading one.</small>
+                <small>Counts as a new question. The next report shows no comparison for it, instead of a misleading one.</small>
               </span>
             </label>
           </fieldset>
@@ -201,14 +219,14 @@ function EditQuestion({ q, published, onDone }: { q: DraftQuestion; published: b
   );
 }
 
-function AddQuestion({ domain }: { domain: DraftDomain }) {
+function AddQuestion({ domain, defaultLevels }: { domain: DraftDomain; defaultLevels: ClassLevel[] }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("{name} ");
+  const [levels, setLevels] = useState<ClassLevel[]>(defaultLevels);
   const { busy, error, act } = useAct();
-  const full = domain.questions.length >= QUESTIONS_MAX;
   if (!open) {
     return (
-      <Button variant="outline" size="sm" type="button" disabled={full} title={full ? `Up to ${QUESTIONS_MAX} questions` : undefined} onClick={() => setOpen(true)}>
+      <Button variant="outline" size="sm" type="button" onClick={() => setOpen(true)}>
         <Icon name="plus" size={16} stroke={2} /> Add question
       </Button>
     );
@@ -219,16 +237,20 @@ function AddQuestion({ domain }: { domain: DraftDomain }) {
         <span>New question for {domain.name}</span>
         <Textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} maxLength={200} autoFocus placeholder="{name} uses counting to solve small problems." />
       </label>
-      <p className="small muted">One behaviour per sentence, so a teacher never scores two things in one tap. A new question gets a new ID, so the next report shows no comparison for it.</p>
+      <div className="mt-2 grid gap-1.5">
+        <span className="text-sm font-medium">Asked in</span>
+        <SetPicker label="Asked in" levels={levels} onChange={setLevels} />
+      </div>
+      <p className="small muted">One behaviour per sentence, so a teacher never scores two things in one tap. The next report shows no comparison with last semester for a new question.</p>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="row">
         <Button size="sm"
           type="button"
          
-          disabled={busy}
+          disabled={busy || levels.length === 0}
           onClick={() =>
             act(
-              () => addQuestionAction(domain.key, text),
+              () => addQuestionAction(domain.key, text, levels),
               () => {
                 setOpen(false);
                 setText("{name} ");
@@ -259,7 +281,7 @@ function Retired({ domain }: { domain: DraftDomain }) {
         {domain.retired.map((q) => (
           <li key={q.key}>
             <span>
-              <code className="rounded bg-secondary px-1.5 py-0.5 text-xs font-medium">{q.key}</code> <Template text={q.text} />
+              <Template text={q.text} />
               {q.retiredAt && <small style={{ display: "block" }}>Retired {timeAgo(q.retiredAt)}</small>}
             </span>
             <Button variant="outline" size="sm" type="button" disabled={busy || domain.questions.length >= QUESTIONS_MAX} onClick={() => act(() => restoreQuestionAction(q.key), undefined, "Question brought back. Teachers see it once you publish.")}>
@@ -345,7 +367,7 @@ function Enrichment({ domain }: { domain: DraftDomain }) {
   );
 }
 
-export function QuestionsEditor({ bank, areaKey, published }: { bank: QuestionBankView; areaKey: string; published: number | null }) {
+export function QuestionsEditor({ bank, areaKey, published, set = "all" }: { bank: QuestionBankView; areaKey: string; published: number | null; set?: QuestionSet }) {
   const [editing, setEditing] = useState<string | null>(null);
   const discard = useAct();
   const domain = bank.domains.find((d) => d.key === areaKey) ?? bank.domains[0];
@@ -354,6 +376,9 @@ export function QuestionsEditor({ bank, areaKey, published }: { bank: QuestionBa
   const changedAreas = new Set(bank.changes.map((c) => c.areaKey));
   // A question that is "added" in the draft has never been published, so rewording it needs no skill choice.
   const isPublished = (q: DraftQuestion) => q.change !== "added";
+  const inSet = (q: DraftQuestion) => q.levels.some((l) => SETS[set].levels.includes(l));
+  const shown = domain.questions.filter(inSet);
+  const perLevel = CLASS_LEVEL_KEYS.map((l) => ({ l, n: domain.questions.filter((q) => q.levels.includes(l)).length }));
 
   return (
     <>
@@ -406,7 +431,22 @@ export function QuestionsEditor({ bank, areaKey, published }: { bank: QuestionBa
           <AlertDescription>Version {published} is live. Reviews opened from now use it; reviews already open keep their wording.</AlertDescription>
         </Alert>
       )}
-      <p className="mb-4 text-sm text-muted-foreground">Reviews that are already open keep the wording they started with. Your changes apply to reviews opened after you publish.</p>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Each class level has its own questions. Pick a level to see what its teachers are asked; the chips on each question show every level that asks it. Reviews that are already open keep the wording they started with.
+      </p>
+      <nav className={TAB_NAV} aria-label="Class level">
+        {(Object.keys(SETS) as QuestionSet[]).map((k) => (
+          <Link
+            key={k}
+            href={`/reports?view=questions&area=${domain.key}${k === "all" ? "" : `&set=${k}`}`}
+            scroll={false}
+            aria-current={set === k ? "page" : undefined}
+            className={TAB}
+          >
+            {SETS[k].label}
+          </Link>
+        ))}
+      </nav>
       {bank.problems.length > 0 && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>
@@ -426,7 +466,7 @@ export function QuestionsEditor({ bank, areaKey, published }: { bank: QuestionBa
           <ul className="qa-domains">
             {bank.domains.map((d) => (
               <li key={d.key}>
-                <Link href={`/questions?area=${d.key}`} aria-current={d.key === domain.key ? "page" : undefined} scroll={false}>
+                <Link href={`/reports?view=questions&area=${d.key}${set === "all" ? "" : `&set=${set}`}`} aria-current={d.key === domain.key ? "page" : undefined} scroll={false}>
                   <span className="ic">
                     <Icon name={d.icon ?? d.key} size={17} />
                   </span>
@@ -435,7 +475,7 @@ export function QuestionsEditor({ bank, areaKey, published }: { bank: QuestionBa
                     {changedAreas.has(d.key) && <i className="flag" aria-label="has changes" />}
                   </span>
                   <small>
-                    {d.questions.length}
+                    {d.questions.filter(inSet).length}
                     {d.love || d.homeIdeas ? ` + ${(d.love ? 1 : 0) + (d.homeIdeas ? 1 : 0)}` : ""}
                   </small>
                 </Link>
@@ -452,48 +492,32 @@ export function QuestionsEditor({ bank, areaKey, published }: { bank: QuestionBa
                   {domain.name} {domain.subName && <span className="han">{domain.subName}</span>}
                 </h2>
                 <p className="small muted">
-                  {domain.questions.length} of {QUESTIONS_MAX} questions · at least {QUESTIONS_MIN}
+                  {QUESTIONS_MIN} to {QUESTIONS_MAX} questions for each level ·{" "}
+                  {perLevel.map(({ l, n }, i) => (
+                    <span key={l} className={n < QUESTIONS_MIN || n > QUESTIONS_MAX ? "font-semibold text-destructive" : undefined}>
+                      {i > 0 && ", "}
+                      {l} {n}
+                    </span>
+                  ))}
                 </p>
               </div>
-              <AddQuestion key={domain.key} domain={domain} />
+              <AddQuestion key={`${domain.key}-${set}`} domain={domain} defaultLevels={SETS[set].levels} />
             </div>
             <div style={{ marginTop: 8 }}>
-              {domain.questions.map((q, i) =>
+              {shown.map((q, i) =>
                 editing === q.key ? (
                   <EditQuestion key={q.key} q={q} published={isPublished(q)} onDone={() => setEditing(null)} />
                 ) : (
-                  <QuestionRow key={q.key} q={q} first={i === 0} last={i === domain.questions.length - 1} published={isPublished(q)} onEdit={() => setEditing(q.key)} />
+                  // Moving is only offered on the full list, so a question never jumps past one that is hidden here.
+                  <QuestionRow key={q.key} q={q} first={i === 0} last={i === shown.length - 1} published={isPublished(q)} onEdit={() => setEditing(q.key)} canMove={set === "all"} />
                 ),
               )}
+              {shown.length === 0 && <p className="py-3 text-sm text-muted-foreground">No question in this area is asked at {SETS[set].levels.join(", ")} yet.</p>}
             </div>
             <Retired domain={domain} />
           </Card>
           <Enrichment key={`enr-${domain.key}-${bank.live.version}-${domain.love?.text}-${(domain.homeIdeas ?? []).join("|")}`} domain={domain} />
         </div>
-
-        <aside className="qa-side">
-          <Card className="mb-4 gap-3 p-5 shadow-none">
-            <h2 style={{ fontSize: 18 }}>Scale labels</h2>
-            <p className="small muted" style={{ margin: "4px 0 12px" }}>
-              Fixed, so the writer reads every score the same way.
-            </p>
-            <ul className="scale-list">
-              {bank.scale.map((s) => (
-                <li key={s.score}>
-                  <b>{s.score}</b>
-                  <span>
-                    {s.label}
-                    <small>{s.meaning}</small>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </Card>
-          <Card className="mb-4 gap-3 p-5 shadow-none">
-            <h2 style={{ fontSize: 18, marginBottom: 12 }}>Activity</h2>
-            <ActivityList entries={bank.activity} />
-          </Card>
-        </aside>
       </div>
     </>
   );

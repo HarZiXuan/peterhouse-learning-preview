@@ -28,7 +28,7 @@ export type AiSettings = {
 
 export const DEFAULT_AI: AiSettings = {
   provider: "sentence_bank",
-  geminiModel: "gemini-2.5-flash",
+  geminiModel: "gemini-3.5-flash",
   geminiKey: "",
   openaiModel: "gpt-4.1-mini",
   openaiKey: "",

@@ -1,13 +1,14 @@
 // Teachers own the report; the administrator reviews it (CHANGES-TO-MAKE changes 1 and 3).
 // A teacher submits a written report; each submission is frozen as a numbered version. The administrator approves it,
 // sends it back with a note, or takes it over to change it themselves (logged, and marked "edited by admin" to staff).
-import type { ApprovalDetail, ApprovalItem, ApprovalStatusFilter, ApprovalsView, Draft, ReviewStatus, SessionUser, Workflow } from "@peterhouse/shared";
+import { TAUGHT_BY } from "./staff";
+import type { ApprovalDetail, ApprovalItem, ApprovalStatusFilter, ApprovalsView, Draft, PeriodSummary, ReviewStatus, SessionUser, Workflow } from "@peterhouse/shared";
 import { fillTemplate, levelWord, scoreOf } from "@peterhouse/shared";
 import { many, one, run, tx } from "../db";
 import { HttpError } from "../http";
 import { openJson, openText, sealJson, sealText } from "./records";
-import { getReviewForUser, getReviewRow, loadAnswers, lockReason, type ReviewRow } from "./reviews";
-import { workspace } from "./workspace";
+import { classRole, getReviewForUser, getReviewRow, loadAnswers, lockReason, type ReviewRow } from "./reviews";
+import { seasonOfSemester, workspace } from "./workspace";
 
 const names = async (ids: (number | null)[]) => {
   const wanted = [...new Set(ids.filter((x): x is number => !!x))];
@@ -20,7 +21,8 @@ const versionCount = async (reviewId: number) => (await one<{ n: number }>("SELE
 /** Where the report is, and what this person can do with it. */
 export async function workflowFor(user: SessionUser, r: ReviewRow): Promise<Workflow> {
   const who = await names([r.change_note_by, r.submitted_by, r.approved_by, r.taken_over_by]);
-  const teacherCan = user.role !== "admin" && !r.taken_over_by && r.term_status === "open";
+  // Only the class's own teachers send the report; a subject teacher rates their subject and nothing more.
+  const teacherCan = (await classRole(user, r.class_id)) === "class" && !r.taken_over_by && r.term_status === "open";
   return {
     status: r.status,
     locked: lockReason(user, r),
@@ -47,6 +49,7 @@ async function openReview(user: SessionUser, id: number, adminOnly = false) {
 export async function submitForReview(user: SessionUser, id: number) {
   const r = await openReview(user, id);
   if (user.role === "admin") throw new HttpError(403, "Teachers submit their reports. An administrator approves them.");
+  if ((await classRole(user, r.class_id)) !== "class") throw new HttpError(403, "The class’s own teachers send the report for review.");
   if (r.taken_over_by) throw new HttpError(409, "An administrator has taken this report over.");
   if (!r.draft || (r.status !== "written" && r.status !== "changes_requested")) throw new HttpError(409, "Write the report before sending it for review.");
   const stale = r.draft.paragraphs.filter((p) => p.stale).map((p) => p.title);
@@ -62,6 +65,7 @@ export async function submitForReview(user: SessionUser, id: number) {
 /** The teacher takes a submitted report back to change something before it is reviewed. */
 export async function takeBack(user: SessionUser, id: number) {
   const r = await openReview(user, id);
+  if ((await classRole(user, r.class_id)) !== "class") throw new HttpError(403, "The class’s own teachers send the report for review.");
   if (r.status !== "submitted") throw new HttpError(409, "Only a report waiting for review can be taken back.");
   if (r.taken_over_by) throw new HttpError(409, "An administrator has taken this report over.");
   await tx(async (c) => {
@@ -142,31 +146,34 @@ const FILTER_STATUSES: Record<ApprovalStatusFilter, ReviewStatus[]> = {
 };
 
 /** Every report this semester, for the administrator's Approvals page. */
-export async function approvalsView(filter: { status?: ApprovalStatusFilter; classId?: number; teacherId?: number }): Promise<ApprovalsView> {
-  const { termId } = await workspace();
+export async function approvalsView(filter: { status?: ApprovalStatusFilter; classId?: number; teacherId?: number; termId?: number; /** Only the classes this person teaches (a teacher's own reports). */ forUser?: number }): Promise<ApprovalsView> {
+  const current = (await workspace()).termId;
+  const termId = filter.termId ?? current;
+  if (termId !== current && !(await one("SELECT 1 FROM terms WHERE id = $1", [termId]))) throw new HttpError(404, "There is no such semester.");
   const rows = await many<{
     id: number;
     status: ReviewStatus;
     updated_at: string;
     admin_edited: boolean;
-    preferred_name: string;
+    legal_name: string;
     chinese_name: string;
     class_id: number;
     class_name: string;
     submitted_by: number | null;
+    submitted_at: string | null;
     lead_id: number | null;
     staff: number[];
     versions: number;
   }>(
-    `SELECT r.id, r.status, r.updated_at, r.admin_edited, c.preferred_name, c.chinese_name, k.id AS class_id, k.name AS class_name, r.submitted_by,
+    `SELECT r.id, r.status, r.updated_at, r.admin_edited, c.legal_name, c.chinese_name, k.id AS class_id, k.name AS class_name, r.submitted_by, r.submitted_at,
             (SELECT s.user_id FROM class_staff s WHERE s.class_id = k.id AND s.role = 'lead') AS lead_id,
             coalesce((SELECT array_agg(s.user_id) FROM class_staff s WHERE s.class_id = k.id), '{}') AS staff,
             (SELECT count(*)::int FROM report_versions v WHERE v.review_id = r.id) AS versions
        FROM reviews r JOIN children c ON c.id = r.child_id JOIN classes k ON k.id = r.class_id
-      WHERE r.term_id = $1 AND c.status = 'active'`,
-    [termId],
+      WHERE r.term_id = $1 AND ($2 OR c.status = 'active') AND ($3::bigint IS NULL OR r.class_id IN ${TAUGHT_BY(3)})`,
+    [termId, termId !== current, filter.forUser ?? null],
   );
-  const who = await names(rows.flatMap((r) => [r.submitted_by, r.lead_id]));
+  const who = await names(rows.flatMap((r) => [r.submitted_by, r.lead_id, ...r.staff.map(Number)]));
   const counts: Record<ApprovalStatusFilter, number> = { waiting: 0, changes: 0, approved: 0, not_submitted: 0 };
   const inFilter = (r: (typeof rows)[number]) =>
     (!filter.classId || r.class_id === filter.classId) && (!filter.teacherId || r.submitted_by === filter.teacherId || r.staff.map(Number).includes(filter.teacherId));
@@ -176,20 +183,52 @@ export async function approvalsView(filter: { status?: ApprovalStatusFilter; cla
     .filter((r) => inFilter(r) && wanted.includes(r.status))
     .map((r) => ({
       reviewId: r.id,
-      childName: openText(r.preferred_name, "children.preferred_name"),
+      childName: openText(r.legal_name, "children.legal_name"),
       chineseName: openText(r.chinese_name, "children.chinese_name"),
       classId: r.class_id,
       className: r.class_name,
       teacher: who.get(r.submitted_by ?? r.lead_id ?? 0) ?? null,
+      classTeachers: r.staff.map((id) => who.get(Number(id))).filter((n): n is string => !!n),
+      submittedBy: r.submitted_by ? (who.get(r.submitted_by) ?? null) : null,
+      submittedAt: r.submitted_at ? new Date(r.submitted_at).toISOString() : null,
       status: r.status,
       version: r.versions,
       updatedAt: r.updated_at,
       adminEdited: r.admin_edited,
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const classes = await many<{ id: number; name: string }>("SELECT id, name FROM classes WHERE term_id = $1 ORDER BY name", [termId]);
-  const teachers = await many<{ id: number; name: string }>("SELECT id, name FROM users WHERE role = 'teacher' AND active ORDER BY name");
+  const classes = await many<{ id: number; name: string }>(`SELECT id, name FROM classes WHERE term_id = $1 AND ($2::bigint IS NULL OR id IN ${TAUGHT_BY(2)}) ORDER BY name`, [termId, filter.forUser ?? null]);
+  const teachers = filter.forUser ? [] : await many<{ id: number; name: string }>("SELECT id, name FROM users WHERE role = 'teacher' AND active ORDER BY name");
   return { items, counts, classes, teachers };
+}
+
+/**
+ * Every report period (June and December of each year), newest first, with where its reports stand.
+ * A closed period counts every child it had, including those who have since left.
+ */
+export async function periodsView(forUser?: number): Promise<PeriodSummary[]> {
+  const current = (await workspace()).termId;
+  const rows = await many<{ id: number; semester: 1 | 2; year: number; status: string; status_r: ReviewStatus | null; n: number }>(
+    `SELECT t.id, t.semester, t.year, t.status, r.status AS status_r, count(r.id)::int AS n
+       FROM terms t
+       LEFT JOIN reviews r ON r.term_id = t.id AND ($2::bigint IS NULL OR r.class_id IN ${TAUGHT_BY(2)})
+       LEFT JOIN children c ON c.id = r.child_id AND (t.id <> $1 OR c.status = 'active')
+      WHERE r.id IS NULL OR c.id IS NOT NULL
+      GROUP BY t.id, r.status
+      ORDER BY t.year DESC, t.semester DESC`,
+    [current, forUser ?? null],
+  );
+  const out = new Map<number, PeriodSummary>();
+  for (const r of rows) {
+    const p = out.get(r.id) ?? { termId: r.id, season: seasonOfSemester(r.semester), year: r.year, current: r.id === current, counts: { waiting: 0, changes: 0, approved: 0, not_submitted: 0 }, total: 0 };
+    if (r.status_r) {
+      for (const [k, list] of Object.entries(FILTER_STATUSES)) if (list.includes(r.status_r)) p.counts[k as ApprovalStatusFilter] += r.n;
+      p.total += r.n;
+    }
+    out.set(r.id, p);
+  }
+  // A teacher only sees the periods in which their classes had reports.
+  return [...out.values()].filter((p) => !forUser || p.total > 0 || p.current);
 }
 
 export async function waitingCount(): Promise<number> {

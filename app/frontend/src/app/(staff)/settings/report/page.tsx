@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { WorkspaceInfo } from "@peterhouse/shared";
 import { apiGet } from "@/lib/api";
@@ -13,7 +14,7 @@ import { SettingsSection } from "../SettingsSection";
 export default async function ReportDetailsPage({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string }> }) {
   const { saved, error } = await searchParams;
   const { school, period, user } = await apiGet<WorkspaceInfo>("/workspace");
-  const admin = user.role === "admin";
+  if (user.role !== "admin") redirect("/settings");
   return (
     <SettingsSection title="Report details" description="Printed on every report. Each report also prints the child’s own class and its teachers.">
       <div className="grid max-w-2xl gap-4">
@@ -27,13 +28,8 @@ export default async function ReportDetailsPage({ searchParams }: { searchParams
             <AlertDescription>Those details could not be saved.</AlertDescription>
           </Alert>
         )}
-        {!admin && (
-          <Alert>
-            <AlertDescription>Only an administrator can change these. Ask them if something printed on the reports needs updating.</AlertDescription>
-          </Alert>
-        )}
         <form action={saveSettingsAction} className="grid gap-4">
-          <fieldset disabled={!admin} className="contents">
+          <fieldset className="contents">
             <Card className="shadow-none">
               <CardContent className="grid gap-4">
                 <div className="grid gap-2">
@@ -53,18 +49,16 @@ export default async function ReportDetailsPage({ searchParams }: { searchParams
                     <Input id="year" name="year" type="number" defaultValue={period.year} />
                   </div>
                 </div>
-                {admin && (
-                  <p className="text-sm text-muted-foreground">
-                    Class names and teachers are set per class.{" "}
-                    <Link className="underline underline-offset-4 hover:text-foreground" href="/classes">
-                      Manage classes
-                    </Link>
-                  </p>
-                )}
+                <p className="text-sm text-muted-foreground">
+                  Class names and teachers are set per class.{" "}
+                  <Link className="underline underline-offset-4 hover:text-foreground" href="/classes">
+                    Manage classes
+                  </Link>
+                </p>
               </CardContent>
             </Card>
           </fieldset>
-          {admin && <Button className="justify-self-start">Save report details</Button>}
+          <Button className="justify-self-start">Save report details</Button>
         </form>
       </div>
     </SettingsSection>

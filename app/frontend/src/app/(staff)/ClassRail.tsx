@@ -2,15 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
-import type { ClassSummary, ReviewStatus, SessionUser } from "@peterhouse/shared";
-import { ChildAvatar, ProgressRing, initials } from "@/components/ui";
+import { useSyncExternalStore } from "react";
+import type { ReviewStatus, SessionUser } from "@peterhouse/shared";
+import { initials } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icons";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { AddChild } from "./AddChild";
 
 export type RailChild = {
   reviewId: number;
@@ -28,17 +26,19 @@ async function logout() {
   window.location.href = "/login?out=1";
 }
 
-type Section = "class" | "reviews" | "reports" | "approvals" | "classes" | "questions" | "people" | "settings";
+type Section = "students" | "reports" | "calendar" | "teachers" | "classes" | "children" | "settings";
 
+/** Which menu item a page belongs to. A child's pages belong to Reports. */
 function sectionOf(path: string): Section {
-  if (/^\/child\/\d+\/report/.test(path) || path.startsWith("/reports")) return "reports";
-  if (path.startsWith("/child/") || path.startsWith("/reviews")) return "reviews";
+  if (path.startsWith("/child/")) return "reports";
+  if (path.startsWith("/reports")) return "reports";
   if (path.startsWith("/classes")) return "classes";
-  if (path.startsWith("/approvals")) return "approvals";
-  if (path.startsWith("/questions")) return "questions";
-  if (path.startsWith("/settings/people")) return "people";
+  if (path.startsWith("/children")) return "children";
+  if (path.startsWith("/approvals") || path.startsWith("/reports") || path.startsWith("/questions")) return "reports";
+  if (path.startsWith("/calendar")) return "calendar";
+  if (path.startsWith("/teachers")) return "teachers";
   if (path.startsWith("/settings")) return "settings";
-  return "class";
+  return "students";
 }
 
 const COLLAPSE_KEY = "rail-collapsed";
@@ -97,24 +97,13 @@ function Account({ user, side = "top" }: { user: SessionUser; side?: "top" | "bo
   );
 }
 
-function stateOf(k: RailChild) {
-  if (k.status === "approved") return "Approved";
-  if (k.status === "submitted") return "Waiting for review";
-  if (k.status === "changes_requested") return "Changes requested";
-  return k.hasReport ? "Report written" : k.answered === 0 ? "Not started" : k.answered === k.total ? "Ready to write" : `${k.answered} of ${k.total} rated`;
-}
-
 export function ClassRail({
   kids,
-  classes,
-  year,
   waiting,
   user,
   children,
 }: {
   kids: RailChild[];
-  classes: ClassSummary[];
-  year: number;
   /** Reports waiting for the administrator's review. */
   waiting: number;
   user: SessionUser;
@@ -122,30 +111,27 @@ export function ClassRail({
 }) {
   const path = usePathname();
   const [collapsed, setCollapsed] = useCollapsed();
-  const [q, setQ] = useState("");
-  const activeId = Number(/^\/child\/(\d+)/.exec(path)?.[1] ?? 0);
-  const section = sectionOf(path);
-  const shown = kids.filter((k) => k.name.toLowerCase().includes(q.trim().toLowerCase()));
-  const finished = kids.filter((k) => k.hasReport).length;
   const admin = user.role === "admin";
-  const showKids = (section === "class" || section === "reviews" || section === "reports") && !collapsed;
+  const section = sectionOf(path);
+  // Teachers count the reports they have written; the administrator counts the reports they have approved.
+  const finished = admin ? kids.filter((k) => k.status === "approved").length : kids.filter((k) => k.hasReport).length;
   // A teacher's home is their own class; the administrator manages every class from Classes instead.
-  // Teachers see their finished reports; the administrator sees every report as a review queue instead.
+  // Teachers see their own reviews and finished reports; the administrator follows every report from Reports instead.
   const groups: Group[] = admin
     ? [
         {
           label: "Teaching",
           items: [
             { key: "classes", href: "/classes", label: "Classes", icon: "classes" },
-            { key: "reviews", href: "/reviews", label: "Reviews", icon: "reviews" },
-            { key: "approvals", href: "/approvals", label: "Approvals", icon: "reports", count: waiting },
+            { key: "children", href: "/children", label: "Children", icon: "children" },
+            { key: "reports", href: "/reports", label: "Reports", icon: "reports", count: waiting },
+            { key: "calendar", href: "/calendar", label: "Calendar", icon: "calendar" },
+            { key: "teachers", href: "/teachers", label: "Teachers", icon: "people" },
           ],
         },
         {
           label: "Setup",
           items: [
-            { key: "questions", href: "/questions", label: "Questions", icon: "questions" },
-            { key: "people", href: "/settings/people", label: "People", icon: "people" },
             { key: "settings", href: "/settings", label: "Settings", icon: "settings" },
           ],
         },
@@ -154,16 +140,29 @@ export function ClassRail({
         {
           label: "My class",
           items: [
-            { key: "class", href: "/", label: "Class", icon: "class" },
-            { key: "reviews", href: "/reviews", label: "Reviews", icon: "reviews" },
+            { key: "students", href: "/", label: "My classes", icon: "class" },
             { key: "reports", href: "/reports", label: "Reports", icon: "reports" },
+            { key: "calendar", href: "/calendar", label: "Calendar", icon: "calendar" },
           ],
         },
         { label: "Account", items: [{ key: "settings", href: "/settings", label: "Settings", icon: "settings" }] },
       ];
   const items = groups.flatMap((g) => g.items);
+  // The phone bar has room for six. The administrator reaches Teachers from Settings there.
+  const phoneItems = items.filter((i) => i.key !== "teachers");
   const togo = kids.length - finished;
-  const doneHref = admin ? "/approvals" : "/reports";
+  const doneHref = admin ? "/reports?status=approved" : "/reports?show=ready";
+  const progressTitle = admin ? "Review progress" : togo === 0 ? "All reports written" : "Report progress";
+  const progressNote = admin
+    ? waiting > 0
+      ? `${waiting} ${waiting === 1 ? "report" : "reports"} to review`
+      : togo === 0
+        ? "All approved"
+        : "Nothing to review now"
+    : togo === 0
+      ? "See your reports"
+      : `${togo} ${togo === 1 ? "report" : "reports"} to write`;
+  const progressHref = admin ? (waiting > 0 ? "/reports?status=waiting" : doneHref) : togo === 0 ? doneHref : "/reports";
 
   return (
     <div className={cn("min-h-screen md:grid", collapsed ? "md:grid-cols-[4.5rem_minmax(0,1fr)]" : "md:grid-cols-[17rem_minmax(0,1fr)]")}>
@@ -208,55 +207,12 @@ export function ClassRail({
           ))}
         </nav>
 
-        {showKids ? (
-          <div className="mt-4 flex min-h-0 flex-1 flex-col gap-2 border-t px-3 pt-4" aria-label="Children">
-            <p className="px-3 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Children</p>
-            {kids.length > 6 && (
-              <div className="relative">
-                <span className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-muted-foreground">
-                  <Icon name="search" size={15} stroke={2} />
-                </span>
-                <Input type="search" placeholder="Find a child" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a child" className="h-8 pl-8" />
-              </div>
-            )}
-            <ul className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
-              {shown.map((k) => (
-                <li key={k.reviewId}>
-                  <Link
-                    href={k.hasReport ? `/child/${k.reviewId}/report` : `/child/${k.reviewId}`}
-                    aria-current={k.reviewId === activeId ? "page" : undefined}
-                    className="flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-sidebar-accent aria-[current=page]:bg-primary/10"
-                  >
-                    <ChildAvatar photoId={k.coverPhotoId} name={k.name} size={32} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold">{k.name}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{stateOf(k)}</span>
-                    </span>
-                    {k.status === "changes_requested" ? (
-                      <span className="text-warn">
-                        <Icon name="warn" size={16} label="Changes requested" />
-                      </span>
-                    ) : k.hasReport ? (
-                      <Icon name="check" size={16} stroke={2.4} label={stateOf(k)} />
-                    ) : (
-                      <ProgressRing answered={k.answered} total={k.total} />
-                    )}
-                  </Link>
-                </li>
-              ))}
-              {kids.length === 0 && <li className="px-2 py-2 text-sm text-muted-foreground">{admin ? "No children yet. Add the first one below." : "No children yet. The administrator adds them."}</li>}
-              {kids.length > 0 && shown.length === 0 && <li className="px-2 py-2 text-sm text-muted-foreground">No child called “{q}”.</li>}
-            </ul>
-            {admin && <AddChild classes={classes} year={year} label="Add a child" variant="outline" className="w-full justify-start" icon />}
-          </div>
-        ) : (
-          <span className="flex-1" />
-        )}
+        <span className="flex-1" />
 
         {kids.length > 0 && (
           <Link
-            href={togo === 0 ? doneHref : "/reviews"}
-            title={collapsed ? `${finished} of ${kids.length} reports done` : undefined}
+            href={progressHref}
+            title={collapsed ? `${finished} of ${kids.length} reports ${admin ? "approved" : "written"}` : undefined}
             className={cn("group mx-3 mb-3 flex items-center gap-3 rounded-xl border bg-card p-3 outline-none transition-colors hover:border-foreground/30 focus-visible:ring-[3px] focus-visible:ring-ring/50", collapsed && "mx-2 justify-center p-2")}
           >
             <span className="relative grid size-11 shrink-0 place-items-center">
@@ -270,8 +226,8 @@ export function ClassRail({
             </span>
             {!collapsed && (
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-heading text-sm font-bold">{togo === 0 ? "All reports done" : "Report progress"}</span>
-                <span className="block truncate text-xs text-muted-foreground">{togo === 0 ? (admin ? "Ready to approve" : "See your reports") : `${togo} ${togo === 1 ? "report" : "reports"} to go`}</span>
+                <span className="block truncate font-heading text-sm font-bold">{progressTitle}</span>
+                <span className="block truncate text-xs text-muted-foreground">{progressNote}</span>
               </span>
             )}
             {!collapsed && <Icon name="right" size={16} />}
@@ -315,8 +271,8 @@ export function ClassRail({
 
       <div className="min-w-0 pb-16 md:pb-0">{children}</div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden" style={{ gridTemplateColumns: `repeat(${items.length}, 1fr)` }} aria-label="Main">
-        {items.map((it) => (
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden" style={{ gridTemplateColumns: `repeat(${phoneItems.length}, 1fr)` }} aria-label="Main">
+        {phoneItems.map((it) => (
           <Link
             key={it.key}
             href={it.href}

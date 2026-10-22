@@ -1,22 +1,22 @@
 "use client";
 
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import type { AreaAnswer, Level, ReviewPhoto, ReviewView } from "@peterhouse/shared";
-import { HOME_PICKS_MAX, LOVE_MAX, NOTE_MAX, SCALE, areaProgress, fillTemplate } from "@peterhouse/shared";
+import { COVER_PHOTO_KEY, LOVE_MAX, NOTE_MAX, SCALE, areaProgress, fillTemplate } from "@peterhouse/shared";
 import { Icon } from "@/components/icons";
 import { timeAgo } from "@/components/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { createReportAction, deletePhotoAction, saveAreaAction, saveChineseNameAction, setPhotoConsentAction } from "../../actions";
+import { createReportAction, deletePhotoAction, saveAreaAction, saveChineseNameAction } from "../../actions";
 
 
 const WRITING_STEPS = [
@@ -39,10 +39,15 @@ function WritingOverlay({ name }: { name: string }) {
     <Dialog open>
       <DialogContent showCloseButton={false} onEscapeKeyDown={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()} className="sm:max-w-sm" aria-live="polite">
         <DialogHeader>
-          <DialogTitle>Writing {name}’s report</DialogTitle>
-          <DialogDescription>{WRITING_STEPS[step]}</DialogDescription>
+          <DialogTitle className="flex items-center gap-2.5">
+            <Loader2 className="size-5 shrink-0 animate-spin text-primary motion-reduce:animate-none" aria-hidden />
+            Writing {name}’s report
+          </DialogTitle>
+          <DialogDescription key={step} className="animate-in fade-in slide-in-from-bottom-1 duration-500">
+            {WRITING_STEPS[step]}
+          </DialogDescription>
         </DialogHeader>
-        <Progress value={((step + 1) / WRITING_STEPS.length) * 100} />
+        <Progress value={((step + 1) / WRITING_STEPS.length) * 100} className="sweep" />
         <p className="text-xs text-muted-foreground">This can take up to a minute. Please keep this page open.</p>
       </DialogContent>
     </Dialog>
@@ -103,11 +108,14 @@ export function ReviewForm({ view }: { view: ReviewView }) {
   const { reviewId, childName, rubric, pronoun } = view;
   // A submitted, approved or taken-over report cannot be changed here; say why instead (at most every few seconds).
   const locked = view.workflow.locked;
+  // A subject teacher rates the children and adds photos; the class's teachers write the report.
+  const mine = view.subjectOnly;
   const nudged = useRef(false);
-  const blocked = () => {
-    if (!locked) return false;
+  const blocked = (areaKey?: string) => {
+    const why = locked ?? (mine && !areaKey ? "You rate this class’s children. Its class teachers write the report." : null);
+    if (!why) return false;
     if (!nudged.current) {
-      toast.info(locked);
+      toast.info(why);
       nudged.current = true;
       setTimeout(() => (nudged.current = false), 4000);
     }
@@ -121,7 +129,6 @@ export function ReviewForm({ view }: { view: ReviewView }) {
     return i < 0 ? 0 : i;
   });
   const [photos, setPhotos] = useState<ReviewPhoto[]>(view.photos);
-  const [consent, setConsent] = useState(view.photoConsent);
   const [uploading, setUploading] = useState<string | null>(null);
   const [saved, setSaved] = useState<{ s: "idle" | "saving" | "saved" | "error"; at: string }>({ s: "idle", at: view.updatedAt });
   const [error, setError] = useState<string | null>(null);
@@ -129,6 +136,7 @@ export function ReviewForm({ view }: { view: ReviewView }) {
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const pending = useRef<Record<string, () => Promise<void>>>({});
   const fileInput = useRef<HTMLInputElement>(null);
+  const uploadKey = useRef<string>(COVER_PHOTO_KEY);
   const top = useRef<HTMLDivElement>(null);
 
   const fill = (t: string) => fillTemplate(t, childName, pronoun);
@@ -140,7 +148,7 @@ export function ReviewForm({ view }: { view: ReviewView }) {
   const ans = answers[current.key];
 
   const queueSave = (areaKey: string, next: AreaAnswer, delay: number) => {
-    if (blocked()) return;
+    if (blocked(areaKey)) return;
     latest.current = { ...latest.current, [areaKey]: next };
     setAnswers(latest.current);
     clearTimeout(timers.current[areaKey]);
@@ -201,14 +209,15 @@ export function ReviewForm({ view }: { view: ReviewView }) {
     });
   };
 
-  async function upload(files: FileList | null) {
-    if (!files?.length || blocked()) return;
-    setUploading(current.key);
+  /** One photo for each learning page and one for the cover: a new photo takes the place of the old one. */
+  async function upload(files: FileList | null, key: string) {
+    if (!files?.length || blocked(key)) return;
+    setUploading(key);
     setError(null);
     let added = 0;
-    for (const f of Array.from(files)) {
+    for (const f of Array.from(files).slice(0, 1)) {
       // The backend takes the image bytes directly as the request body.
-      const res = await fetch(`/api/reviews/${reviewId}/photos?area=${encodeURIComponent(current.key)}`, {
+      const res = await fetch(`/api/reviews/${reviewId}/photos?area=${encodeURIComponent(key)}`, {
         method: "POST",
         body: f,
         headers: { "content-type": f.type || "image/jpeg" },
@@ -221,23 +230,28 @@ export function ReviewForm({ view }: { view: ReviewView }) {
       setPhotos(json.photos);
       added++;
     }
-    if (added) toast.success(`${added === 1 ? "Photo" : `${added} photos`} added to ${current.shortName}.${consent ? "" : " They stay in the app until parents agree to photos."}`);
+    if (added) toast.success(`Photo saved for ${key === COVER_PHOTO_KEY ? "the cover" : current.shortName}.`);
     setUploading(null);
     if (fileInput.current) fileInput.current.value = "";
   }
 
   async function removePhoto(photoId: number) {
-    if (blocked()) return;
+    if (blocked(photos.find((p) => p.id === photoId)?.areaKey ?? undefined)) return;
     const res = await deletePhotoAction(reviewId, photoId);
     setPhotos(res.photos);
     if (res.ok) toast.success("Photo removed.");
     else toast.error(res.error);
   }
 
+  const pickFor = (key: string) => {
+    if (blocked(key)) return;
+    uploadKey.current = key;
+    fileInput.current?.click();
+  };
   const areaPhotos = photos.filter((p) => p.areaKey === current.key);
-  const olderPhotos = photos.filter((p) => !p.areaKey || !rubric.areas.some((a) => a.key === p.areaKey));
+  const coverPhoto = photos.find((p) => p.areaKey === COVER_PHOTO_KEY);
+  const olderPhotos = photos.filter((p) => !p.areaKey || (p.areaKey !== COVER_PHOTO_KEY && !rubric.areas.some((a) => a.key === p.areaKey)));
   const note = ans.note ?? "";
-  const home = ans.home ?? [];
   const isLast = area === rubric.areas.length - 1;
   const firstGap = rubric.areas.findIndex((_, i) => progress[i].todo > 0);
   const savedLine = saved.s === "saving" ? "Saving…" : saved.s === "error" ? "Could not save. Check your connection." : `Saved ${timeAgo(saved.at)}`;
@@ -265,11 +279,18 @@ export function ReviewForm({ view }: { view: ReviewView }) {
               </Link>
             </Button>
           )}
-          <Button type="button" disabled={!ready || writing || !!locked} onClick={write} title={ready ? undefined : "Rate every statement, or mark it Not seen yet, first"}>
+          <Button type="button" disabled={!ready || writing || !!locked || !!mine} onClick={write} title={ready ? undefined : "Rate every statement, or mark it Not seen yet, first"}>
             <Icon name="write" size={16} /> {view.hasReport ? "Write again" : "Write report"}
           </Button>
         </div>
       </header>
+      {mine && !locked && (
+        <Alert className="mb-4">
+          <AlertDescription>
+            You teach a subject in this class, so you can rate its children and add photos. The class teachers write the report.
+          </AlertDescription>
+        </Alert>
+      )}
       {locked && (
         <Alert className="mb-4 border-warn/60 bg-warn/10">
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2 text-foreground">
@@ -395,37 +416,6 @@ export function ReviewForm({ view }: { view: ReviewView }) {
             </div>
           )}
 
-          {current.homeIdeas && current.homeIdeas.length > 0 && (
-            <fieldset className="qrow" style={{ border: 0, borderBottom: "1px solid var(--line)" }}>
-              <legend className="qlabel" style={{ marginBottom: 0, float: "left", width: "100%" }}>
-                Ideas to try at home
-              </legend>
-              <p className="small muted" style={{ clear: "both", margin: "2px 0 12px" }}>
-                Pick up to {HOME_PICKS_MAX} · {home.length} of {HOME_PICKS_MAX} picked
-              </p>
-              <div className="homepicks">
-                {current.homeIdeas.map((h) => {
-                  const on = home.includes(h);
-                  return (
-                    <button
-                      key={h}
-                      className="homepick"
-                      type="button"
-                      aria-pressed={on}
-                      disabled={!on && home.length >= HOME_PICKS_MAX}
-                      onClick={() => patch({ home: on ? home.filter((x) => x !== h) : [...home, h] }, 300)}
-                    >
-                      <i>
-                        <Icon name="check" size={13} stroke={2.6} />
-                      </i>
-                      {h}
-                    </button>
-                  );
-                })}
-              </div>
-            </fieldset>
-          )}
-
           <div className="extras">
             <div className="extras-note">
               <div className="spread">
@@ -451,14 +441,14 @@ export function ReviewForm({ view }: { view: ReviewView }) {
             </div>
             <div className="photos">
               <span style={{ fontWeight: 600, fontSize: 15 }}>
-                Photos{" "}
+                Photo{" "}
                 <span className="small muted" style={{ fontWeight: 400 }}>
-                  {areaPhotos.length} / {view.photosPerArea}
+                  one for this page of the report
                 </span>
               </span>
               <div className="photos-row">
                 {areaPhotos.map((p, i) => (
-                  <div key={p.id} className="ph" data-hidden={!consent}>
+                  <div key={p.id} className="ph">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={`/api/photos/${p.id}`} alt={`${current.shortName} photo ${i + 1}`} />
                     <button type="button" aria-label={`Remove ${current.shortName} photo ${i + 1}`} onClick={() => removePhoto(p.id)}>
@@ -467,29 +457,17 @@ export function ReviewForm({ view }: { view: ReviewView }) {
                   </div>
                 ))}
                 {Array.from({ length: Math.max(0, view.photosPerArea - areaPhotos.length) }).map((_, i) => (
-                  <button key={i} type="button" className="ph-add" aria-label={`Add a ${current.shortName} photo`} disabled={uploading !== null} onClick={() => fileInput.current?.click()}>
+                  <button key={i} type="button" className="ph-add" aria-label={`Add a ${current.shortName} photo`} disabled={uploading !== null} onClick={() => pickFor(current.key)}>
                     <Icon name={uploading === current.key && i === 0 ? "photo" : "plus"} size={22} />
                   </button>
                 ))}
               </div>
-              <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => upload(e.target.files)} />
-              {!consent && <p className="rounded-md bg-secondary px-3 py-2 text-sm text-muted-foreground">No photo consent. Photos stay in the app; the PDF shows {childName}’s initials instead.</p>}
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
-                <Checkbox
-                  checked={consent}
-                  onCheckedChange={async (v) => {
-                    if (blocked()) return;
-                    const on = v === true;
-                    setConsent(on);
-                    const res = await setPhotoConsentAction(reviewId, on);
-                    if (!res.ok) {
-                      setConsent(!on);
-                      toast.error(res.error);
-                    } else toast.success(on ? "Photo consent saved. The report shows the photos." : "Photo consent removed. The report shows initials instead of photos.");
-                  }}
-                />
-                <span className={consent ? "text-muted-foreground" : undefined}>{consent ? "Parents agreed to photos in the report" : "Parents have agreed to photos in the report"}</span>
-              </label>
+              {areaPhotos.length >= view.photosPerArea && (
+                <button type="button" className="small" style={{ alignSelf: "flex-start", textDecoration: "underline", background: "none", border: 0, padding: 0 }} disabled={uploading !== null} onClick={() => pickFor(current.key)}>
+                  Choose a different photo
+                </button>
+              )}
+              <input ref={fileInput} type="file" accept="image/*" hidden onChange={(e) => upload(e.target.files, uploadKey.current)} />
             </div>
           </div>
 
@@ -500,7 +478,7 @@ export function ReviewForm({ view }: { view: ReviewView }) {
             </Button>
             {isLast ? (
               ready ? (
-                <Button type="button" onClick={write} disabled={writing || !!locked}>
+                <Button type="button" onClick={write} disabled={writing || !!locked || !!mine}>
                   <Icon name="write" size={16} /> {view.hasReport ? "Write again" : "Write report"}
                 </Button>
               ) : (
@@ -558,6 +536,32 @@ export function ReviewForm({ view }: { view: ReviewView }) {
               </span>
             </div>
           </div>
+          <div className="glance-card">
+            <h2>Cover photo</h2>
+            <p className="small muted" style={{ margin: "4px 0 10px" }}>
+              The big photo inside the rainbow on the front of the report.
+            </p>
+            <div className="photos-row">
+              {coverPhoto ? (
+                <div className="ph">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/api/photos/${coverPhoto.id}`} alt={`${childName} cover photo`} />
+                  <button type="button" aria-label="Remove the cover photo" onClick={() => removePhoto(coverPhoto.id)}>
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <button type="button" className="ph-add" aria-label="Add a cover photo" disabled={uploading !== null} onClick={() => pickFor(COVER_PHOTO_KEY)}>
+                  <Icon name={uploading === COVER_PHOTO_KEY ? "photo" : "plus"} size={22} />
+                </button>
+              )}
+            </div>
+            {coverPhoto && (
+              <button type="button" className="small" style={{ marginTop: 8, textDecoration: "underline", background: "none", border: 0, padding: 0 }} disabled={uploading !== null} onClick={() => pickFor(COVER_PHOTO_KEY)}>
+                Choose a different photo
+              </button>
+            )}
+          </div>
           <div className="tip">
             <Icon name="info" size={18} />
             <p>Families never see the numbers. The report turns them into marks and warm, plain words.</p>
@@ -570,7 +574,7 @@ export function ReviewForm({ view }: { view: ReviewView }) {
               </p>
               <div className="photos-row" style={{ flexWrap: "wrap" }}>
                 {olderPhotos.map((p, i) => (
-                  <div key={p.id} className="ph" data-hidden={!consent}>
+                  <div key={p.id} className="ph">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={`/api/photos/${p.id}`} alt={`Earlier photo ${i + 1}`} />
                     <button type="button" aria-label={`Remove earlier photo ${i + 1}`} onClick={() => removePhoto(p.id)}>

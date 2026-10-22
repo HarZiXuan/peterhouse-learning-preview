@@ -14,27 +14,24 @@ export function levelMeaning(level: Level): string {
 }
 
 const PRONOUN_FORMS: Record<string, Record<Pronoun, string>> = {
-  "he/she/they": { she: "she", he: "he", they: "they" },
-  "him/her/them": { she: "her", he: "him", they: "them" },
-  "his/her/their": { she: "her", he: "his", they: "their" },
+  "he/she": { she: "she", he: "he" },
+  "him/her": { she: "her", he: "him" },
+  "his/her": { she: "her", he: "his" },
+  // Questions frozen in older reviews spelled the tokens with a third form; they read the same.
+  "he/she/they": { she: "she", he: "he" },
+  "him/her/them": { she: "her", he: "him" },
+  "his/her/their": { she: "her", he: "his" },
 };
-const THEY_VERBS: Record<string, string> = { is: "are", has: "have", was: "were", does: "do", goes: "go" };
 
-/**
- * Fills a question template: {name} becomes the child's preferred name and {he/she/they}, {him/her/them},
- * {his/her/their} the pronoun. "they feels" is corrected to "they feel".
- */
+/** Fills a question template: {name} becomes the child's preferred name and {he/she}, {him/her}, {his/her} the pronoun. */
 export function fillTemplate(text: string, name: string, pronoun: Pronoun): string {
   let out = text.replace(/\{name\}/g, name);
-  for (const [token, forms] of Object.entries(PRONOUN_FORMS)) out = out.split(`{${token}}`).join(`\u0000${forms[pronoun]}\u0000`);
-  if (pronoun === "they") {
-    out = out.replace(/\u0000they\u0000 (\p{L}+)/gu, (_, v: string) => `they ${THEY_VERBS[v] ?? (/(ch|sh|ss|x)es$/.test(v) ? v.slice(0, -2) : /[^s]s$/.test(v) ? v.slice(0, -1) : v)}`);
-  }
-  return out.replace(/\u0000/g, "");
+  for (const [token, forms] of Object.entries(PRONOUN_FORMS)) out = out.split(`{${token}}`).join(forms[pronoun]);
+  return out;
 }
 
 /** "{name} listens well and responds in a group." → "listens well and responds in a group" (for the writer and lists). */
-export function skillPhrase(skill: Skill, pronoun: Pronoun = "they"): string {
+export function skillPhrase(skill: Skill, pronoun: Pronoun): string {
   return fillTemplate(skill.text, "\u0001", pronoun)
     .replace(/^\s*\u0001\s*/, "")
     .replace(/\u0001/g, "the child")

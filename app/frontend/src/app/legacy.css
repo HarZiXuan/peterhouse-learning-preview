@@ -132,6 +132,12 @@ textarea.input, .ta { resize: vertical; min-height: 64px; }
 .dtab[aria-selected="true"] { background: var(--ink); color: #fff; box-shadow: none; }
 .dtab[aria-selected="true"] .ic { background: var(--sun); color: var(--ink); }
 .dtab[aria-selected="true"] small { color: #d6d6dc; }
+/* The publish preview's narrower column: one-line pills with the area's full name and its question count. */
+.dtabs.compact { gap: 6px; }
+.dtabs.compact .dtab { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px 0 5px; border-radius: 999px; }
+.dtabs.compact .dtab .ic { width: 30px; height: 30px; border-radius: 50%; }
+.dtabs.compact .dtab b { font-size: 14px; }
+.dtabs.compact .dtab small { font-weight: 600; }
 
 .form-cols { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; align-items: start; }
 .area-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px 30px 24px; min-width: 0; }
@@ -199,7 +205,7 @@ textarea.input, .ta { resize: vertical; min-height: 64px; }
 /* ═══ Admin: questions ════════════════════════════════════ */
 .qa-head { display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
 .qa-head > div:first-child { flex: 1; min-width: 260px; }
-.qa-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.qa-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; align-items: start; }
 .qa-domains { list-style: none; display: grid; gap: 4px; position: sticky; top: 24px; }
 .qa-domains a { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; text-decoration: none; color: var(--ink); font-weight: 600; font-size: 14px; }
 .qa-domains a:hover { background: var(--rung); color: var(--ink); }
@@ -223,14 +229,6 @@ textarea.input, .ta { resize: vertical; min-height: 64px; }
 .retired { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line-2); }
 .retired summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--muted-foreground); }
 .retired li { list-style: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; font-size: 14px; color: var(--muted-foreground); }
-.scale-list { list-style: none; display: grid; gap: 8px; }
-.scale-list li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 13.5px; }
-.scale-list b { font-family: var(--font-display); font-size: 16px; width: 28px; height: 28px; border-radius: 8px; background: var(--ground); display: grid; place-items: center; }
-.scale-list span small { display: block; color: var(--muted-foreground); font-size: 12.5px; }
-.log { list-style: none; display: grid; gap: 12px; }
-.log li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; font-size: 13.5px; }
-.log .ic { width: 28px; height: 28px; border-radius: 8px; background: var(--ground); display: grid; place-items: center; color: var(--muted-foreground); }
-.log small { display: block; color: var(--muted-foreground); font-size: 12px; }
 .ideas { display: grid; gap: 8px; }
 .ideas li { list-style: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .changes { list-style: none; display: grid; gap: 10px; }
@@ -269,7 +267,6 @@ textarea.input, .ta { resize: vertical; min-height: 64px; }
   .form-cols { grid-template-columns: minmax(0, 1fr); }
   .glance { position: static; grid-template-columns: 1fr 1fr; }
   .qa-grid { grid-template-columns: 200px minmax(0, 1fr); }
-  .qa-side { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 }
 @media (max-width: 1000px) {
   .wb { grid-template-columns: 1fr; }
@@ -308,7 +305,6 @@ textarea.input, .ta { resize: vertical; min-height: 64px; }
   .qa-grid { grid-template-columns: 1fr; }
   .qa-domains { position: static; display: flex; overflow-x: auto; gap: 6px; scrollbar-width: none; }
   .qa-domains a { flex: none; grid-template-columns: auto auto auto; }
-  .qa-side { grid-template-columns: 1fr; }
   .facts { grid-template-columns: 1fr; }
   .wb-preview { height: 62vh; }
   .wb-goto { display: none; }

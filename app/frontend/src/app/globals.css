@@ -82,3 +82,26 @@
   body { @apply font-sans antialiased; font-size: 15px; line-height: 1.55; }
   h1, h2, h3 { font-family: var(--font-heading); }
 }
+
+/* The writing dialog: a soft light sweeping along the progress bar, so it looks alive while the report is written. */
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+.sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55), transparent);
+  animation: sweep 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sweep::after {
+    animation: none;
+  }
+}
