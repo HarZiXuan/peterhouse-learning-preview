@@ -1,4 +1,4 @@
-// Classes, their teachers and their children (CHANGES-TO-MAKE change 4). Only an administrator changes any of this;
+// Classes, their teachers and their children (BUILT.md change 4). Only an administrator changes any of this;
 // a teacher sees the classes they are in. A child's enrolment in a class for a semester is their review.
 import type { ClassChild, ClassDetail, ClassesView, ClassLevel, ClassSummary, LevelProblem, NewChildInput, Pronoun, SessionUser, StaffRef, SubjectColor, SubjectTeacher } from "@peterhouse/shared";
 import { CLASS_LEVEL_KEYS, birthYearOf, childPhotoUrl, levelForBirthday } from "@peterhouse/shared";
@@ -7,9 +7,10 @@ import { HttpError, notFound } from "../http";
 import { openText, sealJson, sealText } from "./records";
 import { clearOutsideTeachers, TAUGHT_BY } from "./staff";
 import { listSubjects } from "./timetable";
-import { ownersOf } from "./parts";
+import { ownersOf, subjectFits } from "./parts";
 import { publishedRubric } from "./questions";
 import { workspace } from "./workspace";
+import { refitToLevel } from "./reviews";
 
 export const LEVEL_ORDER = `array_position(ARRAY[${CLASS_LEVEL_KEYS.map((k) => `'${k}'`).join(",")}]::text[], k.level)`;
 
@@ -151,11 +152,17 @@ export async function classDetail(id: number): Promise<ClassDetail> {
   const subjectTeachers = taught.filter((t) => !staff.has(t.id));
   const areas = (await publishedRubric()).rubric.areas;
   const owners = (await ownersOf([id], areas.map((a) => a.key))).get(id)!;
+  const subjects = (await listSubjects()).filter((x) => x.active);
+  const domains = await many<{ key: string; name: string; short_name: string; sub_name: string | null }>("SELECT key, name, short_name, sub_name FROM domains");
   const areaTeachers = areas.map((a) => {
     const o = owners[a.key];
-    return { key: a.key, name: a.name, teacher: o ? { id: o.id, name: o.name } : null, source: o?.source ?? ("lead" as const) };
+    const d = domains.find((x) => x.key === a.key);
+    // The subject that teaches this area, and everyone tagged with it: two or more is a clash the admin should settle.
+    const subject = d ? (subjects.find((x) => subjectFits(x.name, d)) ?? null) : null;
+    const teachers = subject ? taught.filter((t) => t.subjectIds.includes(subject.id)).map(({ id, name }) => ({ id, name })) : [];
+    return { key: a.key, name: a.name, teacher: o ? { id: o.id, name: o.name } : null, source: o?.source ?? ("lead" as const), subject: subject?.name ?? null, teachers };
   });
-  return { ...summary, year, pupils, subjectTeachers, teacherSubjects, subjects: (await listSubjects()).filter((x) => x.active), areaTeachers };
+  return { ...summary, year, pupils, subjectTeachers, teacherSubjects, subjects, areaTeachers };
 }
 
 /** Who rates one learning area of this class's reports; null hands it back to the lead teacher. */
@@ -298,7 +305,7 @@ export async function addChild(input: NewChildInput): Promise<{ reviewId: number
   return tx(async (c) => {
     const child = await one<{ id: number }>(
       `INSERT INTO children (preferred_name, last_name, legal_name, chinese_name, date_of_birth, pronoun, photo_consent, joined_on, guardians, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, false, COALESCE($7::date, CURRENT_DATE), $8, $9) RETURNING id`,
+       VALUES ($1, $2, $3, $4, $5, $6, $10, COALESCE($7::date, CURRENT_DATE), $8, $9) RETURNING id`,
       [
         ...sealNames(names),
         chinese ? sealText(chinese, "children.chinese_name") : "",
@@ -307,6 +314,7 @@ export async function addChild(input: NewChildInput): Promise<{ reviewId: number
         input.joinedOn || null,
         guardians.length ? sealJson(guardians, "children.guardians") : "",
         notes ? sealText(notes, "children.notes") : "",
+        !!input.photoConsent,
       ],
       c,
     );
@@ -336,9 +344,9 @@ export async function addChild(input: NewChildInput): Promise<{ reviewId: number
 
 /** This semester's review of a child, for the administrator's changes. */
 async function currentReview(reviewId: number) {
-  const r = await one<{ id: number; child_id: number; term_id: number; class_id: number; date_of_birth: string; term_status: string }>(
-    `SELECT r.id, r.child_id, r.term_id, r.class_id, c.date_of_birth, t.status AS term_status
-       FROM reviews r JOIN children c ON c.id = r.child_id JOIN terms t ON t.id = r.term_id WHERE r.id = $1`,
+  const r = await one<{ id: number; child_id: number; term_id: number; class_id: number; class_level: ClassLevel; date_of_birth: string; term_status: string }>(
+    `SELECT r.id, r.child_id, r.term_id, r.class_id, k.level AS class_level, c.date_of_birth, t.status AS term_status
+       FROM reviews r JOIN children c ON c.id = r.child_id JOIN terms t ON t.id = r.term_id JOIN classes k ON k.id = r.class_id WHERE r.id = $1`,
     [reviewId],
   );
   if (!r) throw notFound("This child");
@@ -381,6 +389,8 @@ export async function updateChild(reviewId: number, input: { firstName: string; 
     ], c);
     if (cls.id !== r.class_id) await run("UPDATE reviews SET class_id = $1 WHERE id = $2", [cls.id, r.id], c);
   });
+  // Another level asks other questions.
+  if (cls.id !== r.class_id && cls.level !== r.class_level) await refitToLevel(r.id);
   return { childId: r.child_id, moved: cls.id !== r.class_id ? cls.id : null };
 }
 

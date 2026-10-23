@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { editTextAction, rewriteSectionAction } from "../../../actions";
 
-type Section = { key: string; title: string; text: string };
+type Section = { key: string; title: string; text: string; flags?: string[]; stale?: boolean };
 
 const A4_PX = 794;
 
@@ -287,6 +287,13 @@ export function ReportWorkbench({
                 )}
                 </span>
               </label>
+              {/* What the checks found: read before sending. Fixing it is the teacher's call; nothing is rewritten by itself. */}
+              {(s.stale || (s.flags?.length ?? 0) > 0) && (
+                <ul className="mt-2 grid gap-1 rounded-md border border-warn/60 bg-warn/10 px-3 py-2 text-sm text-warn-foreground">
+                  {s.stale && <li>The ratings changed after this was written. Read it again, then save it or write this part again.</li>}
+                  {s.flags?.map((f) => <li key={f}>{f}</li>)}
+                </ul>
+              )}
               <div className="row" style={{ marginTop: 8 }} hidden={!!locked}>
                 <Button size="sm" disabled={!dirty || busy || !!locked} onClick={() => save(s.key)}>
                   Save

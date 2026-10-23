@@ -112,7 +112,7 @@ Every change is to the draft, so each message ends with "Teachers see it once yo
 | Take over | Admin | Confirm box: "Edit Mia’s report yourself? For the last-minute case… Staff will see “edited by admin”… Families never see this." Then "You are editing Mia’s report. Approve it when it is ready." | "This report is approved. Send it back first if something must change." | Confirm box, then pop-up |
 | Download PDF before approval | Everyone | "The PDF for families can be downloaded once the report is approved." | n/a | Pop-up |
 | Change ratings, photos or wording while locked | Everyone | A note at the top says why: "This report is waiting for review. Take it back to change something." / "An administrator has taken this report over…" / "This report is approved. An administrator can send it back…" Tapping a rating repeats it as a pop-up. | n/a | On the page and pop-up |
-| Start next semester with reports not approved | Admin | "3 reports are not approved yet: 1 waiting for review, 2 not sent yet. If you start the next semester now they stay as they are, and families cannot get those PDFs." | n/a | On the page |
+| Start next semester with reports not approved | Admin | "3 reports are not approved yet: 1 waiting for review, 2 not sent yet. If you start the next semester now they can still be finished and approved afterwards: pick the semester on Reports." | n/a | On the page |
 | Approvals with nothing waiting | Admin | "All caught up. Nothing is waiting. Reports appear here when a teacher sends one for review." With a link: "See the 2 not sent yet". | n/a | On the page |
 | Search Approvals with no match | Admin | "No one matches. Try a different name or clear the filters." | n/a | On the page |
 
@@ -153,9 +153,21 @@ Every change is to the draft, so each message ends with "Teachers see it once yo
 
 ---
 
+## Fixes from the 23 Oct 2026 review
+
+| Action | Who | Success | If it fails | Kind |
+| --- | --- | --- | --- | --- |
+| Add a photo without photo consent | Teacher | On the page instead of the photo boxes: "No photo consent from Mia’s parents, so photos cannot be added and none print. An administrator records consent on the child’s profile." | "This child's parents have not given photo consent, so no photos can be added. An administrator records consent on the child's profile." | On the page / pop-up |
+| Record photo consent | Admin | Tick "Parents gave photo consent." when adding the child, or under Edit on the profile. The profile shows "Photo consent: Yes / No". | n/a | Dialog |
+| A paragraph whose ratings changed | Teacher | Under the paragraph: "The ratings changed after this was written. Read it again, then save it or write this part again." Saving the teacher's own edit clears it. | Submit: "Check English first: the ratings changed after it was written." | On the page |
+| What the checks found | Teacher, admin | Under the paragraph, one line each, e.g. "Contains a number (“3”). Check this is a concrete count, not a score." | n/a | On the page |
+| Write or submit with a statement unrated | Teacher | n/a | "Some statements are not rated yet. Rate each one, or mark it Not seen yet, first." | Pop-up |
+| Hand back a report taken over | Admin | "Mia’s report is back with the teacher." | "This report is with its teacher already." | Pop-up |
+| Switch semester | Admin | The confirm box adds: "Its reports that are not approved yet can still be finished and approved: pick the semester on Reports." | n/a | Confirm box |
+
 ## Still to write (for changes not built yet)
 
-These will be added when their change is built (see `CHANGES-TO-MAKE.md`).
+These will be added when their change is built (see `CHANGES-TO-MAKE.md`; built changes are in `BUILT.md`).
 
 | Change | Action | Planned message |
 |---|---|---|

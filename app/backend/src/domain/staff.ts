@@ -1,4 +1,4 @@
-// Who teaches a class (CHANGES-TO-MAKE change 12). A class's lead and co-teachers are in class_staff; its subject
+// Who teaches a class (BUILT.md change 12). A class's lead and co-teachers are in class_staff; its subject
 // teachers are teachers who are not. The subjects any teacher teaches there are in class_subject_teachers: a lead or
 // co-teacher with none teaches every subject. All of it is set on the class page only, and a lesson can name only a
 // teacher of the class.

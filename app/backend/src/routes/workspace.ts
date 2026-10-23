@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import type { WorkspaceInfo } from "@peterhouse/shared";
+import { userPhotoUrl, type WorkspaceInfo } from "@peterhouse/shared";
+import { one } from "../db";
 import { audit } from "../audit";
 import { currentUser, requireAdmin } from "../auth";
 import { idParam, parse } from "../http";
@@ -13,7 +14,8 @@ export const workspaceRouter = Router();
 
 workspaceRouter.get("/workspace", async (req, res) => {
   const user = currentUser(req);
-  const info: WorkspaceInfo = { user, school: await getSchool(), period: await getReportPeriod(), hasAi: hasAi(), classes: await classesFor(user), waiting: user.role === "admin" ? await waitingCount() : 0 };
+  const mine = await one<{ changed_at: string }>("SELECT changed_at FROM user_photos WHERE user_id = $1", [user.id]);
+  const info: WorkspaceInfo = { user, myPhoto: userPhotoUrl(user.id, mine?.changed_at), school: await getSchool(), period: await getReportPeriod(), hasAi: hasAi(), classes: await classesFor(user), waiting: user.role === "admin" ? await waitingCount() : 0 };
   res.json(info);
 });
 

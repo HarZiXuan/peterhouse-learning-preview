@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons";
 import { SELECT } from "../AddChild";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 /** Name search and class and teacher filters for the review queue. Changing one reloads the list with it. */
@@ -25,7 +26,7 @@ export function Filters({ classes, teachers, className }: { classes: { id: numbe
         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
           <Icon name="search" size={16} />
         </span>
-        <input
+        <Input
           type="search"
           aria-label="Search by child name"
           placeholder="Search by name"
@@ -35,7 +36,7 @@ export function Filters({ classes, teachers, className }: { classes: { id: numbe
             const v = e.target.value;
             timer.current = setTimeout(() => set("q", v.trim(), false), 250);
           }}
-          className={`${SELECT} pl-9`}
+          className="pl-9"
         />
       </div>
       <select aria-label="Class" className={cn(SELECT, "w-auto min-w-40")} value={params.get("class") ?? ""} onChange={(e) => set("class", e.target.value)}>

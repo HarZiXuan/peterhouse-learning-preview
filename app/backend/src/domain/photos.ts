@@ -80,3 +80,27 @@ export async function readChildPhoto(childId: number): Promise<Buffer | null> {
 }
 
 export const clearChildPhoto = (childId: number) => run("UPDATE children SET photo = NULL, photo_at = NULL WHERE id = $1", [childId]);
+
+// ─── A staff member's profile photo ──────────────────────────────────────
+// One per account, encrypted like the others. Everyone signed in sees it; the person themselves or an administrator changes it.
+
+export const canChangeUserPhoto = (user: SessionUser, userId: number) => user.role === "admin" || user.id === userId;
+
+/** Stores the new photo and returns when it changed (part of its URL). */
+export async function setUserPhoto(userId: number, input: Buffer): Promise<string> {
+  if (!(await one("SELECT 1 FROM users WHERE id = $1", [userId]))) throw new HttpError(404, "That person could not be found.");
+  const out = await cleanImage(input);
+  const row = await one<{ changed_at: string }>(
+    `INSERT INTO user_photos (user_id, data) VALUES ($1, $2)
+     ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, changed_at = now() RETURNING changed_at`,
+    [userId, encryptBytes(out)],
+  );
+  return row!.changed_at;
+}
+
+export async function readUserPhoto(userId: number): Promise<Buffer | null> {
+  const row = await one<{ data: Buffer }>("SELECT data FROM user_photos WHERE user_id = $1", [userId]);
+  return row ? decryptBytes(row.data) : null;
+}
+
+export const clearUserPhoto = (userId: number) => run("DELETE FROM user_photos WHERE user_id = $1", [userId]);

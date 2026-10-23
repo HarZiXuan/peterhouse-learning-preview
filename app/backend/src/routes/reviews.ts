@@ -1,15 +1,15 @@
 import express, { Router } from "express";
 import { z } from "zod";
 import type { AreaAnswer, PartPageView, ReportSection, ReportView, ReviewView } from "@peterhouse/shared";
-import { COVER_PHOTO_KEY, PHOTOS_PER_AREA, areaProgress, childPhotoUrl, semesterLabel } from "@peterhouse/shared";
+import { COVER_PHOTO_KEY, PHOTOS_PER_AREA, areaProgress, childPhotoUrl, semesterLabel, userPhotoUrl } from "@peterhouse/shared";
 import { audit } from "../audit";
 import { createSession, currentUser, destroySession } from "../auth";
 import { HttpError, idParam, parse } from "../http";
-import { buildReportData, editParagraph, getReviewForEdit, getReviewForUser, loadAnswers, lockReason, openReview, refreshReviewStatus, reopenPart, rewriteParagraph, saveArea, savePartText, sendPart, setChineseName, writeDraft, writePart } from "../domain/reviews";
+import { buildReportData, editParagraph, reportFor, getReviewForEdit, getReviewForUser, loadAnswers, lockReason, refreshReviewStatus, reopenPart, rewriteParagraph, saveArea, savePartText, sendPart, setChineseName, writeDraft, writePart } from "../domain/reviews";
 import { isLead, leadName, partsView, waitingParts } from "../domain/parts";
 import { submitForReview, takeBack, workflowFor } from "../domain/approval";
 import { one } from "../db";
-import { addPhoto, canSeeChild, clearChildPhoto, deletePhoto, listPhotos, photoReviewId, photoView, readChildPhoto, readPhoto, setChildPhoto } from "../domain/photos";
+import { addPhoto, canChangeUserPhoto, canSeeChild, clearChildPhoto, clearUserPhoto, readUserPhoto, setUserPhoto, deletePhoto, listPhotos, photoReviewId, photoView, readChildPhoto, readPhoto, setChildPhoto } from "../domain/photos";
 import { renderReportPdf } from "../domain/pdf";
 import { getSchool } from "../domain/school";
 
@@ -25,8 +25,8 @@ const Answer = z.object({
 
 reviewsRouter.get("/reviews/:id", async (req, res) => {
   const user = currentUser(req);
-  // Opening a review freezes the question set it uses (rule 2).
-  const r = await openReview(await getReviewForUser(user, idParam(req.params.id)));
+  // Looking does not freeze the question set; the first saved rating does (rule 2).
+  const r = await getReviewForUser(user, idParam(req.params.id));
   const { answers } = await loadAnswers(r.id, r.rubric);
   const view: ReviewView = {
     reviewId: r.id,
@@ -41,6 +41,7 @@ reviewsRouter.get("/reviews/:id", async (req, res) => {
     hasReport: !!r.draft,
     photos: (await listPhotos(r.id)).map(photoView),
     photosPerArea: PHOTOS_PER_AREA,
+    photoConsent: r.photo_consent,
     semester: `${semesterLabel(r.season)} ${r.year}`,
     updatedAt: r.updated_at,
     workflow: await workflowFor(user, r),
@@ -89,14 +90,16 @@ reviewsRouter.get("/reviews/:id/report", async (req, res) => {
   if (!r.draft) throw new HttpError(404, "Create the report first.", "no_draft");
   const draft = r.draft;
   const sections: ReportSection[] = [
-    ...draft.paragraphs.map((p) => ({ key: p.key, title: p.title, text: p.text })),
+    ...draft.paragraphs.map((p) => ({ key: p.key, title: p.title, text: p.text, flags: p.flags, stale: p.stale })),
     { key: "home", title: "Ideas to try at home (one per line)", text: draft.homeIdeas.join("\n") },
   ];
+  const { data, school, reportDate } = await reportFor(r);
   const view: ReportView = {
     reviewId: r.id,
     childName: r.legal_name,
-    data: await buildReportData(r),
-    school: await getSchool(),
+    data,
+    school,
+    reportDate,
     sections,
     notes: draft.notes,
     provider: draft.provider,
@@ -122,7 +125,7 @@ reviewsRouter.post("/reviews/:id/paragraphs/:key/rewrite", async (req, res) => {
 // A teacher's part: the areas they rate, their paragraph, and sending it to the lead teacher.
 reviewsRouter.get("/reviews/:id/parts/:area", async (req, res) => {
   const user = currentUser(req);
-  const r = await openReview(await getReviewForUser(user, idParam(req.params.id)));
+  const r = await getReviewForUser(user, idParam(req.params.id));
   const area = r.rubric.areas.find((a) => a.key === req.params.area);
   if (!area) throw new HttpError(404, "Not found.");
   const { answers } = await loadAnswers(r.id, r.rubric);
@@ -211,6 +214,7 @@ reviewsRouter.post("/reviews/:id/photos", express.raw({ type: "image/*", limit: 
   const area = String(req.query.area ?? "");
   const r = await getReviewForEdit(user, id, undefined, area);
   if (area !== COVER_PHOTO_KEY && !r.rubric.areas.some((a) => a.key === area)) throw new HttpError(400, "Choose the learning area (or the cover) for this photo.");
+  if (!r.photo_consent) throw new HttpError(409, "This child's parents have not given photo consent, so no photos can be added. An administrator records consent on the child's profile.", "no_consent");
   if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new HttpError(400, "No photo was sent.");
   await addPhoto(id, area, req.body);
   await audit(req, user.id, "photo.added", { reviewId: id, childId: r.child_id, detail: area });
@@ -258,6 +262,33 @@ reviewsRouter.delete("/children/:childId/photo", async (req, res) => {
   res.json({ photo: null });
 });
 
+// A staff member's profile photo: everyone signed in sees it; the person themselves or an administrator changes it.
+reviewsRouter.get("/users/:userId/photo", async (req, res) => {
+  const bytes = await readUserPhoto(idParam(req.params.userId));
+  if (!bytes) throw new HttpError(404, "Not found.");
+  res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400" });
+  res.send(bytes);
+});
+
+reviewsRouter.put("/users/:userId/photo", express.raw({ type: "image/*", limit: "25mb" }), async (req, res) => {
+  const user = currentUser(req);
+  const userId = idParam(req.params.userId);
+  if (!canChangeUserPhoto(user, userId)) throw new HttpError(403, "Only that person or an administrator can change this photo.");
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new HttpError(400, "No photo was sent.");
+  const at = await setUserPhoto(userId, req.body);
+  await audit(req, user.id, "user.photo_changed", { detail: String(userId) });
+  res.json({ photo: userPhotoUrl(userId, at) });
+});
+
+reviewsRouter.delete("/users/:userId/photo", async (req, res) => {
+  const user = currentUser(req);
+  const userId = idParam(req.params.userId);
+  if (!canChangeUserPhoto(user, userId)) throw new HttpError(403, "Only that person or an administrator can change this photo.");
+  await clearUserPhoto(userId);
+  await audit(req, user.id, "user.photo_removed", { detail: String(userId) });
+  res.json({ photo: null });
+});
+
 reviewsRouter.delete("/reviews/:id/photos/:photoId", async (req, res) => {
   const user = currentUser(req);
   const id = idParam(req.params.id);
@@ -270,7 +301,7 @@ reviewsRouter.delete("/reviews/:id/photos/:photoId", async (req, res) => {
   res.json({ photos: (await listPhotos(id)).map(photoView) });
 });
 
-// ─── Sending the report for review (CHANGES-TO-MAKE changes 1 and 3) ─────
+// ─── Sending the report for review (BUILT.md changes 1 and 3) ─────
 
 reviewsRouter.post("/reviews/:id/submit", async (req, res) => {
   const user = currentUser(req);

@@ -1,4 +1,4 @@
-// Subject timetable (CHANGES-TO-MAKE changes 7 and 12): subjects, fixed weekly lessons, and subject teachers who are
+// Subject timetable (BUILT.md changes 7 and 12): subjects, fixed weekly lessons, and subject teachers who are
 // added on the class, see it, rate only their subject, and manage only their own lessons.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AreaAnswer, SessionUser, Subject } from "@peterhouse/shared";

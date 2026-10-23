@@ -1,4 +1,4 @@
-// Subject timetable (CHANGES-TO-MAKE change 7): the school's subject list and each class's fixed weekly lessons.
+// Subject timetable (BUILT.md change 7): the school's subject list and each class's fixed weekly lessons.
 // The administrator manages everything. A lesson can name only one of its class's teachers (change 12): its lead and
 // co-teachers, or a subject teacher of that subject. A subject teacher manages their own lessons of their subjects.
 import type { ClassLevel, Lesson, LessonInput, SessionUser, StaffRef, Subject, SubjectColor, SubjectsView, TimetableView } from "@peterhouse/shared";

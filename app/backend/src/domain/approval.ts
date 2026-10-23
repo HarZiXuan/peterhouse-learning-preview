@@ -1,14 +1,15 @@
-// Teachers own the report; the administrator reviews it (CHANGES-TO-MAKE changes 1 and 3).
+// Teachers own the report; the administrator reviews it (BUILT.md changes 1 and 3).
 // A teacher submits a written report; each submission is frozen as a numbered version. The administrator approves it,
 // sends it back with a note, or takes it over to change it themselves (logged, and marked "edited by admin" to staff).
 import { TAUGHT_BY } from "./staff";
 import type { ApprovalDetail, ApprovalItem, ApprovalStatusFilter, ApprovalsView, Draft, PeriodSummary, ReviewStatus, SessionUser, Workflow } from "@peterhouse/shared";
-import { fillTemplate, levelWord, scoreOf } from "@peterhouse/shared";
+import { COVER_PHOTO_KEY, fillTemplate, levelWord, readinessGaps, scoreOf } from "@peterhouse/shared";
 import { many, one, run, tx } from "../db";
 import { HttpError } from "../http";
 import { openJson, openText, sealJson, sealText } from "./records";
 import { isLead } from "./parts";
-import { classRole, getReviewForUser, getReviewRow, loadAnswers, lockReason, type ReviewRow } from "./reviews";
+import { buildReportData, classRole, getReviewForUser, getReviewRow, loadAnswers, lockReason, type ApprovedReport, type ReviewRow } from "./reviews";
+import { getSchool } from "./school";
 import { seasonOfSemester, workspace } from "./workspace";
 
 const names = async (ids: (number | null)[]) => {
@@ -23,7 +24,7 @@ const versionCount = async (reviewId: number) => (await one<{ n: number }>("SELE
 export async function workflowFor(user: SessionUser, r: ReviewRow): Promise<Workflow> {
   const who = await names([r.change_note_by, r.submitted_by, r.approved_by, r.taken_over_by]);
   // Only the lead teacher sends the report; the other teachers send their parts to the lead.
-  const teacherCan = (await isLead(user, r.class_id)) && !r.taken_over_by && r.term_status === "open";
+  const teacherCan = (await isLead(user, r.class_id)) && !r.taken_over_by && r.term_status !== "locked";
   return {
     status: r.status,
     locked: lockReason(user, r),
@@ -36,13 +37,15 @@ export async function workflowFor(user: SessionUser, r: ReviewRow): Promise<Work
     canSubmit: teacherCan && !!r.draft && (r.status === "written" || r.status === "changes_requested"),
     canTakeBack: teacherCan && r.status === "submitted",
     canDownload: r.status === "approved",
+    canHandBack: user.role === "admin" && !!r.taken_over_by && r.status !== "approved" && r.term_status !== "locked",
   };
 }
 
 async function openReview(user: SessionUser, id: number, adminOnly = false) {
   if (adminOnly && user.role !== "admin") throw new HttpError(403, "Only an administrator can do that.");
   const r = await getReviewForUser(user, id);
-  if (r.term_status !== "open") throw new HttpError(409, "That review belongs to a finished semester.");
+  // A finished semester's reports can still be sent and approved, so no family misses theirs; a locked one cannot.
+  if (r.term_status === "locked") throw new HttpError(409, "That review belongs to a locked semester.");
   return r;
 }
 
@@ -53,6 +56,7 @@ export async function submitForReview(user: SessionUser, id: number) {
   if (!(await isLead(user, r.class_id))) throw new HttpError(403, "The lead teacher sends the report for review.");
   if (r.taken_over_by) throw new HttpError(409, "An administrator has taken this report over.");
   if (!r.draft || (r.status !== "written" && r.status !== "changes_requested")) throw new HttpError(409, "Write the report before sending it for review.");
+  if (readinessGaps(r.rubric, (await loadAnswers(r.id, r.rubric)).answers).length) throw new HttpError(409, "Some statements are not rated yet. Rate each one, or mark it Not seen yet, first.");
   const stale = r.draft.paragraphs.filter((p) => p.stale).map((p) => p.title);
   if (stale.length) throw new HttpError(409, `Check ${stale.join(", ")} first: the ratings changed after it was written.`);
   return tx(async (c) => {
@@ -99,10 +103,38 @@ export async function approve(user: SessionUser, id: number) {
       `UPDATE reviews SET status = 'approved', approved_by = $2, approved_at = now(), approved_snapshot = $3,
               taken_over_by = NULL, taken_over_at = NULL, change_note = '', change_note_by = NULL, change_note_at = NULL, updated_at = now()
         WHERE id = $1`,
-      [id, user.id, sealJson(r.draft, "reviews.approved_snapshot")],
+      [id, user.id, sealJson({ draft: r.draft }, "reviews.approved_snapshot")],
       c,
     );
   });
+  await freezeApproved(id);
+  return { childId: r.child_id };
+}
+
+/**
+ * Freezes the approved report so it prints the same every time: the profile photo becomes the report's own cover, and
+ * the pages and school details are kept as they are now. Later changes to the child, class or settings do not reach it.
+ */
+async function freezeApproved(id: number) {
+  const r = (await getReviewRow(id))!;
+  if (r.photo_consent && !(await one("SELECT 1 FROM review_photos WHERE review_id = $1 AND area_key = $2", [id, COVER_PHOTO_KEY]))) {
+    await run(
+      `INSERT INTO review_photos (review_id, data, position, area_key)
+       SELECT $1, ch.photo, (SELECT COALESCE(MAX(position), -1) + 1 FROM review_photos WHERE review_id = $1), $2 FROM children ch WHERE ch.id = $3 AND ch.photo IS NOT NULL`,
+      [id, COVER_PHOTO_KEY, r.child_id],
+    );
+  }
+  const fresh = (await getReviewRow(id))!;
+  const snapshot: ApprovedReport = { draft: fresh.draft!, data: await buildReportData(fresh), school: await getSchool(), approvedAt: fresh.approved_at ?? new Date().toISOString() };
+  await run("UPDATE reviews SET approved_snapshot = $2 WHERE id = $1", [id, sealJson(snapshot, "reviews.approved_snapshot")]);
+}
+
+/** The administrator gives a report they took over back to its teacher without changing its status. */
+export async function handBack(user: SessionUser, id: number) {
+  const r = await openReview(user, id, true);
+  if (!r.taken_over_by) throw new HttpError(409, "This report is with its teacher already.");
+  if (r.status === "approved") throw new HttpError(409, "This report is approved. Send it back first if something must change.");
+  await run("UPDATE reviews SET taken_over_by = NULL, taken_over_at = NULL, updated_at = now() WHERE id = $1", [id]);
   return { childId: r.child_id };
 }
 
@@ -121,7 +153,7 @@ export async function requestChanges(user: SessionUser, id: number, note: string
     );
     await run(
       `UPDATE reviews SET status = 'changes_requested', change_note = $2, change_note_by = $3, change_note_at = now(),
-              taken_over_by = NULL, taken_over_at = NULL, approved_by = NULL, approved_at = NULL, updated_at = now()
+              taken_over_by = NULL, taken_over_at = NULL, approved_by = NULL, approved_at = NULL, approved_snapshot = NULL, updated_at = now()
         WHERE id = $1`,
       [id, sealText(text, "reviews.change_note"), user.id],
       c,

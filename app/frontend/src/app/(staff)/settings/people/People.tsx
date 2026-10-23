@@ -9,7 +9,7 @@ import type { UserSummary } from "@peterhouse/shared";
 import { timeAgo } from "@/components/ui";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { SUBJECT_TINT } from "@/lib/calendar";
+import { SUBJECT_SWATCH } from "@/lib/calendar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -17,8 +17,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
-import { EmptyTable, SearchBox, SortHead, STICKY_CELL, useSort, type Column } from "@/components/sort-table";
+import { DataTable, TableFilter, TableSearch, type ColumnDef } from "@/components/data-table";
+import { ChildAvatar } from "@/components/ui";
+import { PROFILE_DIALOG, ProfileForm, ProfilePhoto } from "@/components/ProfileForm";
 import { cn } from "@/lib/utils";
 
 const SELECT = "h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
@@ -150,22 +151,21 @@ function ResetPassword({ user, busy, onReset, ...dialog }: { user: UserSummary; 
   );
 }
 
-function EditPerson({ user, isMe, busy, onSave, ...dialog }: { user: UserSummary; isMe: boolean; busy: boolean; onSave: (patch: { name: string; email: string; role: string }) => Promise<boolean> } & Open) {
+export function EditPerson({ user, isMe, busy, onSave, ...dialog }: { user: UserSummary; isMe: boolean; busy: boolean; onSave: (patch: { name: string; email: string; role: string }) => Promise<boolean> } & Open) {
   return (
     <Dialog {...dialog}>
-      <DialogContent className="sm:max-w-md">
-        <form
-          className="grid gap-4"
+      <DialogContent className={PROFILE_DIALOG}>
+        <ProfileForm
+          title={`Edit ${user.name}`}
+          description="A new email becomes their sign-in. They are signed out and sign in again with it, using the same password."
+          photo={<ProfilePhoto endpoint={`/api/users/${user.id}/photo`} photo={user.photo} name={user.name} />}
+          busy={busy}
           onSubmit={async (e) => {
             e.preventDefault();
             const f = new FormData(e.currentTarget);
             if (await onSave({ name: String(f.get("name")), email: String(f.get("email")), role: String(f.get("role")) })) dialog.onOpenChange(false);
           }}
         >
-          <DialogHeader>
-            <DialogTitle>Edit {user.name}</DialogTitle>
-            <DialogDescription>A new email becomes their sign-in. They are signed out and sign in again with it, using the same password.</DialogDescription>
-          </DialogHeader>
           <div className="grid gap-2">
             <Label htmlFor={`e-name-${user.id}`}>Name</Label>
             <Input id={`e-name-${user.id}`} name="name" defaultValue={user.name} required maxLength={100} />
@@ -187,13 +187,7 @@ function EditPerson({ user, isMe, busy, onSave, ...dialog }: { user: UserSummary
               user.role === "teacher" && user.classes.length > 0 && <p className="text-xs text-muted-foreground">Making them an administrator takes them out of their classes: administrators see every class.</p>
             )}
           </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="ghost">Cancel</Button>
-            </DialogClose>
-            <Button disabled={busy}>Save</Button>
-          </DialogFooter>
-        </form>
+        </ProfileForm>
       </DialogContent>
     </Dialog>
   );
@@ -201,11 +195,11 @@ function EditPerson({ user, isMe, busy, onSave, ...dialog }: { user: UserSummary
 
 /** One word for where the account stands, most urgent first. */
 function statusOf(u: UserSummary): { label: string; order: number; tone: string } {
-  if (!u.active) return { label: "Deactivated", order: 4, tone: "bg-secondary text-muted-foreground" };
-  if (u.lockedUntil) return { label: `Locked until ${new Date(u.lockedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`, order: 0, tone: "bg-destructive/15 text-destructive" };
-  if (u.role === "teacher" && u.classes.length === 0) return { label: "Not in a class", order: 1, tone: "bg-warn/15 text-warn-foreground" };
-  if (u.mustChangePassword) return { label: "New password needed", order: 2, tone: "bg-warn/15 text-warn-foreground" };
-  return { label: "Active", order: 3, tone: "bg-success/15 text-success" };
+  if (!u.active) return { label: "Deactivated", order: 4, tone: "bg-status-idle-soft text-status-idle-fg" };
+  if (u.lockedUntil) return { label: `Locked until ${new Date(u.lockedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`, order: 0, tone: "bg-status-waiting-soft text-status-waiting-fg" };
+  if (u.role === "teacher" && u.classes.length === 0) return { label: "Not in a class", order: 1, tone: "bg-status-changes-soft text-status-changes-fg" };
+  if (u.mustChangePassword) return { label: "New password needed", order: 2, tone: "bg-status-changes-soft text-status-changes-fg" };
+  return { label: "Active", order: 3, tone: "bg-status-approved-soft text-status-approved-fg" };
 }
 
 /** What a teacher teaches, once per subject, with the classes it is in. A lead or co-teacher with no subjects tagged in a class teaches all of them there. */
@@ -264,7 +258,8 @@ function SubjectPills({ user }: { user: UserSummary }) {
         {subjects.map((x) => (
           <Tooltip key={x.name}>
             <TooltipTrigger asChild>
-              <span tabIndex={0} className={cn("cursor-default whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[13px] font-semibold outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50", x.color ? (SUBJECT_TINT[x.color] ?? SUBJECT_TINT.stone) : "bg-secondary text-foreground")}>
+              <span tabIndex={0} className="inline-flex cursor-default items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-0.5 text-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                {x.color && <span className="size-1.5 rounded-full" style={{ background: SUBJECT_SWATCH[x.color] }} aria-hidden />}
                 {x.name}
               </span>
             </TooltipTrigger>
@@ -292,117 +287,102 @@ export function People({ initial, meId, teachersOnly = false }: { initial: UserS
   const [dialog, setDialog] = useState<Dialogs>(null);
   const close = (o: boolean) => !o && setDialog(null);
 
-  const columns: Column<UserSummary>[] = [
-    { key: "name", label: "Name", sort: (u) => u.name },
-    ...(teachersOnly ? [] : [{ key: "role", label: "Role", sort: (u: UserSummary) => u.role }]),
-    { key: "classes", label: "Classes", sort: (u) => u.classes.map((k) => k.name).join(", ") || "~" },
-    { key: "subjects", label: "Subjects", sort: (u) => subjectsOf(u).map((x) => x.name).join(", ") || "~" },
-    { key: "login", label: "Last sign-in", sort: (u) => u.lastLoginAt ?? "" },
-    { key: "status", label: "Status", sort: (u) => statusOf(u).order },
-    { key: "actions", label: "Actions" },
+  const columns: ColumnDef<UserSummary>[] = [
+    {
+      id: "name",
+      accessorFn: (u) => u.name,
+      header: "Name",
+      cell: ({ row: { original: u } }) => (
+        <div className="flex items-center gap-3">
+          <ChildAvatar src={u.photo} name={u.name} size={32} />
+          <div className="min-w-0 leading-tight">
+            <p className="font-medium">
+              {u.role === "teacher" ? (
+                <Link href={`/teachers/${u.id}`} className="text-foreground underline-offset-4 hover:text-foreground hover:underline">
+                  {u.name}
+                </Link>
+              ) : (
+                u.name
+              )}
+              {u.id === meId && <span className="ml-1.5 font-normal text-muted-foreground">(you)</span>}
+            </p>
+            <p className="text-xs text-muted-foreground">{u.email}</p>
+          </div>
+        </div>
+      ),
+    },
+    ...(teachersOnly ? [] : [{ id: "role", accessorFn: (u: UserSummary) => u.role, header: "Role", cell: ({ row: { original: u } }: { row: { original: UserSummary } }) => (u.role === "admin" ? "Administrator" : "Teacher") } satisfies ColumnDef<UserSummary>]),
+    {
+      id: "classes",
+      accessorFn: (u) => (u.role === "admin" ? "" : u.classes.map((k) => k.name).join(", ")),
+      header: "Classes",
+      meta: { className: "whitespace-normal" },
+      cell: ({ row: { original: u } }) => (u.role === "admin" ? <span className="text-muted-foreground">All classes</span> : u.classes.length === 0 ? <span className="text-muted-foreground">—</span> : <ClassesCell classes={u.classes} />),
+    },
+    { id: "subjects", accessorFn: (u) => subjectsOf(u).map((x) => x.name).join(", "), header: "Subjects", meta: { className: "whitespace-normal" }, cell: ({ row: { original: u } }) => <SubjectPills user={u} /> },
+    { id: "login", accessorFn: (u) => u.lastLoginAt ?? "", header: "Last sign-in", meta: { className: "text-muted-foreground" }, cell: ({ row: { original: u } }) => (u.lastLoginAt ? timeAgo(u.lastLoginAt) : "Never") },
+    {
+      id: "status",
+      accessorFn: (u) => statusOf(u).order,
+      header: "Status",
+      cell: ({ row: { original: u } }) => {
+        const st = statusOf(u);
+        return <Badge className={cn("border-transparent font-medium", st.tone)}>{st.label}</Badge>;
+      },
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      enableSorting: false,
+      meta: { align: "right" },
+      cell: ({ row: { original: u } }) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" disabled={busy} aria-label={`Options for ${u.name}`}>
+              <Ellipsis />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {u.lockedUntil && <DropdownMenuItem onSelect={() => act(() => send("POST", `/users/${u.id}/unlock`), `${u.name} can sign in again.`)}>Unlock</DropdownMenuItem>}
+            <DropdownMenuItem onSelect={() => setDialog({ kind: "edit", user: u })}>Edit</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setDialog({ kind: "reset", user: u })}>Reset password</DropdownMenuItem>
+            {u.id !== meId && (
+              <>
+                <DropdownMenuSeparator />
+                {u.active ? (
+                  <DropdownMenuItem variant="destructive" onSelect={() => setDialog({ kind: "deactivate", user: u })}>
+                    Deactivate
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onSelect={() => act(() => send("PATCH", `/users/${u.id}`, { active: true }), `${u.name} can sign in again.`)}>Reactivate</DropdownMenuItem>
+                )}
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
   ];
   // Every class someone teaches in, for the class filter.
   const classes = [...new Map(initial.flatMap((u) => u.classes.map((k) => [k.id, k.name] as const))).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const shown = initial.filter(
     (u) => `${u.name} ${u.email}`.toLowerCase().includes(q.trim().toLowerCase()) && (!role || u.role === role) && (!classId || u.classes.some((k) => k.id === Number(classId))),
   );
-  const { sorted, sort, toggle } = useSort(shown, columns);
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <SearchBox value={q} onChange={setQ} label="Search people by name or email" />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <TableSearch value={q} onChange={setQ} label="Search people by name or email" placeholder="Search by name or email" />
         {!teachersOnly && (
-          <select aria-label="Role" className={cn(SELECT, "w-auto min-w-40")} value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="">Everyone</option>
-            <option value="teacher">Teachers</option>
-            <option value="admin">Administrators</option>
-          </select>
+          <TableFilter label="Role" all="Everyone" value={role} onChange={setRole} options={[{ value: "teacher", label: "Teachers" }, { value: "admin", label: "Administrators" }]} />
         )}
-        {classes.length > 0 && (
-          <select aria-label="Class" className={cn(SELECT, "w-auto min-w-40")} value={classId} onChange={(e) => setClassId(e.target.value)}>
-            <option value="">All classes</option>
-            {classes.map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </select>
-        )}
+        {classes.length > 0 && <TableFilter label="Class" all="All classes" value={classId} onChange={setClassId} options={classes.map(([id, name]) => ({ value: String(id), label: name }))} />}
+        <p className="ml-auto text-sm text-muted-foreground">{shown.length === initial.length ? `${initial.length} ${teachersOnly ? "teachers" : "people"}` : `${shown.length} of ${initial.length}`}</p>
       </div>
 
-      {sorted.length === 0 ? (
-        <EmptyTable title="No one matches" text="Try a different name or clear the filter." />
-      ) : (
-        <Card className="overflow-hidden p-0 shadow-none">
-          <Table>
-            <SortHead columns={columns} sort={sort} toggle={toggle} />
-            <TableBody>
-              {sorted.map((u) => {
-                const st = statusOf(u);
-                return (
-                  <TableRow key={u.id} className={cn(!u.active && "text-muted-foreground")}>
-                    <TableCell className={cn(STICKY_CELL, "py-3")}>
-                      <p className="font-heading text-base font-semibold">
-                        {u.role === "teacher" ? (
-                          <Link href={`/teachers/${u.id}`} className="underline-offset-4 hover:underline">
-                            {u.name}
-                          </Link>
-                        ) : (
-                          u.name
-                        )}
-                        {u.id === meId && <span className="ml-1.5 text-sm font-normal text-muted-foreground">(you)</span>}
-                      </p>
-                      <p className="text-[13px] text-muted-foreground">{u.email}</p>
-                    </TableCell>
-                    {!teachersOnly && <TableCell className="whitespace-nowrap">{u.role === "admin" ? "Administrator" : "Teacher"}</TableCell>}
-                    <TableCell>
-                      {u.role === "admin" ? (
-                        <span className="text-muted-foreground">All classes</span>
-                      ) : u.classes.length === 0 ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <ClassesCell classes={u.classes} />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <SubjectPills user={u} />
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">{u.lastLoginAt ? timeAgo(u.lastLoginAt) : "Never"}</TableCell>
-                    <TableCell>
-                      <Badge className={cn("whitespace-nowrap border-transparent font-normal", st.tone)}>{st.label}</Badge>
-                    </TableCell>
-                    <TableCell className="px-4 text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon-sm" disabled={busy} aria-label={`Options for ${u.name}`}>
-                            <Ellipsis />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {u.lockedUntil && <DropdownMenuItem onSelect={() => act(() => send("POST", `/users/${u.id}/unlock`), `${u.name} can sign in again.`)}>Unlock</DropdownMenuItem>}
-                          <DropdownMenuItem onSelect={() => setDialog({ kind: "edit", user: u })}>Edit</DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => setDialog({ kind: "reset", user: u })}>Reset password</DropdownMenuItem>
-                          {u.id !== meId && (
-                            <>
-                              <DropdownMenuSeparator />
-                              {u.active ? (
-                                <DropdownMenuItem variant="destructive" onSelect={() => setDialog({ kind: "deactivate", user: u })}>Deactivate</DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem onSelect={() => act(() => send("PATCH", `/users/${u.id}`, { active: true }), `${u.name} can sign in again.`)}>Reactivate</DropdownMenuItem>
-                              )}
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
+      <Card className="gap-0 overflow-hidden py-0 shadow-none">
+        <DataTable columns={columns} data={shown} getRowId={(u) => u.id} initialSort={[{ id: "name", desc: false }]} rowClassName={(u) => !u.active && "text-muted-foreground"} empty="No one matches. Try a different name or clear the filter." />
+      </Card>
 
       {dialog?.kind === "edit" && (
         <EditPerson

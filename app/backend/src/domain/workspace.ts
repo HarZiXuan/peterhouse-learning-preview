@@ -73,7 +73,14 @@ export async function startNextSemester(user: SessionUser): Promise<{ termId: nu
         [created!.id, k.id],
         c,
       );
-      await run("INSERT INTO calendar_event_classes (event_id, class_id) SELECT event_id, $1 FROM calendar_event_classes WHERE class_id = $2", [created!.id, k.id], c);
+      // Only entries still to come follow the class: a trip last semester stays in last semester.
+      await run(
+        `INSERT INTO calendar_event_classes (event_id, class_id)
+         SELECT x.event_id, $1 FROM calendar_event_classes x JOIN calendar_events e ON e.id = x.event_id
+          WHERE x.class_id = $2 AND e.ends_on >= make_date($3::int, CASE $4::int WHEN 1 THEN 1 ELSE 7 END, 1)`,
+        [created!.id, k.id, next.year, next.semester],
+        c,
+      );
       classMap.set(k.id, created!.id);
     }
     // Reports keep the status they had: approval is the administrator's decision, not the calendar's. The semester page

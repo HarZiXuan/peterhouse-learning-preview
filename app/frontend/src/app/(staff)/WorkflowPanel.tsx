@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { DownloadPdf } from "./child/[id]/report/DownloadPdf";
-import { approveAction, requestChangesAction, submitForReviewAction, takeBackAction, takeOverAction } from "./actions";
+import { approveAction, handBackAction, requestChangesAction, submitForReviewAction, takeBackAction, takeOverAction } from "./actions";
 
 // Singapore time on the server and in every browser, so the page reads the same wherever it is drawn.
 const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Singapore" });
@@ -204,6 +204,13 @@ export function WorkflowPanel({
   }
   if (admin && !w.takenOver && w.status !== "approved" && w.status !== "submitted") {
     actions.push(<TakeOver key="to" reviewId={reviewId} childName={childName} busy={busy} run={run} then={() => router.refresh()} />);
+  }
+  if (admin && w.canHandBack) {
+    actions.push(
+      <Button key="hb" variant="outline" disabled={busy} onClick={() => run(() => handBackAction(reviewId), `${childName}’s report is back with the teacher.`)}>
+        Hand back to the teacher
+      </Button>,
+    );
   }
 
   return (

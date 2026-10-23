@@ -38,7 +38,7 @@ export type Skill = {
   key: string;
   /** "{name} listens well and responds in a group." {name} and {he/she} are filled in for the child. */
   text: string;
-  /** The levels this question is asked at (CHANGES-TO-MAKE change 8). Missing means every level, as in older sets. */
+  /** The levels this question is asked at (BUILT.md change 8). Missing means every level, as in older sets. */
   levels?: ClassLevel[];
 };
 

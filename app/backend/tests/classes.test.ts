@@ -1,4 +1,4 @@
-// Classes by level (CHANGES-TO-MAKE change 4): the level comes from the birth year with no exceptions, the administrator
+// Classes by level (BUILT.md change 4): the level comes from the birth year with no exceptions, the administrator
 // places children, teachers see only their own classes, and a new year moves every class up a level.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SessionUser } from "@peterhouse/shared";

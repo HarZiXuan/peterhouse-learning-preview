@@ -1,4 +1,6 @@
-import type { ClassLevel, ClassSummary, ReportStage, ReviewStatus, StaffRef } from "@peterhouse/shared";
+import type { ClassDetail, ClassLevel, ClassSummary, ReportStage, ReviewStatus, StaffRef } from "@peterhouse/shared";
+import { STATUS_LABEL, stageOf } from "@peterhouse/shared";
+import { Badge } from "@/components/ui/badge";
 import { initials } from "@/components/ui";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -25,12 +27,12 @@ const PERSON_TINTS = ["bg-[#f5ccce] text-[#6e1118]", "bg-[#c7e9fa] text-[#0a3a57
 export const personTint = (i: number) => PERSON_TINTS[i % PERSON_TINTS.length];
 
 /** Review status as a pill: the word always shows, colour only helps. */
-/** Each report stage's badge colour. */
+/** Each report stage's badge colour (docs/DESIGN-SYSTEM.md): grey with teachers, red waiting for review, amber sent back, green approved. */
 export const STAGE_TONE: Record<ReportStage, string> = {
-  not_done: "border-transparent bg-secondary text-muted-foreground",
-  submitted: "border-transparent bg-primary/10 text-primary",
-  changes_requested: "border-transparent bg-warn/25 text-[#5a4300]",
-  approved: "border-transparent bg-success text-white",
+  not_done: "border-transparent bg-status-idle-soft text-status-idle-fg",
+  submitted: "border-transparent bg-status-waiting-soft text-status-waiting-fg",
+  changes_requested: "border-transparent bg-status-changes-soft text-status-changes-fg",
+  approved: "border-transparent bg-status-approved-soft text-status-approved-fg",
 };
 export const STATUS_TONE: Record<ReviewStatus, string> = {
   not_started: STAGE_TONE.not_done,
@@ -42,11 +44,12 @@ export const STATUS_TONE: Record<ReviewStatus, string> = {
   approved: STAGE_TONE.approved,
 };
 
+/** Each report stage's dot and bar colour, from the status tokens in globals.css. */
 export const STAGE_FILL: Record<ReportStage, string> = {
-  not_done: "#d6d2c8",
-  submitted: "#ae1d25",
-  changes_requested: "#e0a800",
-  approved: "#1f5236",
+  not_done: "var(--status-idle)",
+  submitted: "var(--status-waiting)",
+  changes_requested: "var(--status-changes)",
+  approved: "var(--status-approved)",
 };
 
 export const hasTeacher = (k: Pick<ClassSummary, "lead" | "co">) => !!k.lead || k.co.length > 0;
@@ -62,3 +65,17 @@ export function TeacherStack({ people, size = 32 }: { people: StaffRef[]; size?:
     </span>
   );
 }
+
+/** A report status as a tinted badge: a coloured dot and the word. Used on every staff page that shows a report's status. */
+export function StatusBadge({ status, left = false }: { status: ReviewStatus; left?: boolean }) {
+  const stage = stageOf(status);
+  return (
+    <Badge className={cn("gap-1.5 font-medium", left ? STAGE_TONE.not_done : STAGE_TONE[stage])}>
+      <span className="size-1.5 rounded-full" style={{ background: left ? STAGE_FILL.not_done : STAGE_FILL[stage] }} aria-hidden />
+      {left ? "Left" : STATUS_LABEL[status]}
+    </Badge>
+  );
+}
+
+/** Areas two or more teachers teach the subject of, with nobody chosen: the lead rates them until an admin picks. */
+export const areaClashes = (detail: ClassDetail) => detail.areaTeachers.filter((a) => a.source !== "set" && a.teachers.length > 1);

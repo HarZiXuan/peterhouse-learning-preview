@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import type { UserSummary, WorkspaceInfo } from "@peterhouse/shared";
 import { apiGet } from "@/lib/api";
 import { AddPerson, People } from "../settings/people/People";
-import { Icon } from "@/components/icons";
+import { PageTitle } from "@/components/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +12,11 @@ export default async function TeachersPage() {
   if (user.role !== "admin") redirect("/");
   const { users } = await apiGet<{ users: UserSummary[] }>("/admin/users");
   return (
-    <main className="mx-auto max-w-6xl px-4 pb-16 pt-6 md:px-10 md:pt-8">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm text-muted-foreground">Each teacher signs in with their own email and password. Administrators are managed in Settings → People.</p>
-          <h1 className="flex items-center gap-3 font-heading text-3xl font-bold tracking-tight md:text-4xl"><Icon name="teachers" size={30} />Teachers</h1>
+    <main className="mx-auto max-w-6xl px-4 pb-16 pt-4 md:px-8 md:pt-6">
+      <header className="mb-5 mt-3 flex flex-wrap items-end justify-between gap-4">
+        <div className="grid gap-1">
+          <PageTitle icon="people">Teachers</PageTitle>
+          <p className="text-sm text-muted-foreground sm:pl-[2.875rem]">Each teacher signs in with their own email and password. Administrators are managed in Settings → People.</p>
         </div>
         <AddPerson teacher />
       </header>

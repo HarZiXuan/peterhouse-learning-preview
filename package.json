@@ -2,6 +2,7 @@
   "name": "peterhouse-learning-review",
   "private": true,
   "scripts": {
+    "dev": "docker compose up -d db && pnpm --parallel --filter @peterhouse/backend --filter @peterhouse/frontend dev",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
     "migrate": "pnpm --filter @peterhouse/backend migrate",

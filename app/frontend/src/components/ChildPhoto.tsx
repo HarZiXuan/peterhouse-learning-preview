@@ -11,7 +11,7 @@ import { ChildAvatar } from "@/components/ui";
  * A child's profile photo. The administrator and the child's teachers change the same one, and it is the cover of the
  * child's report.
  */
-export function ChildPhoto({ childId, photo, name, size = 96 }: { childId: number; photo: string | null; name: string; size?: number }) {
+export function ChildPhoto({ childId, photo, name, size = 96, stacked = false }: { childId: number; photo: string | null; name: string; size?: number; stacked?: boolean }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -35,9 +35,9 @@ export function ChildPhoto({ childId, photo, name, size = 96 }: { childId: numbe
   }
 
   return (
-    <div className="flex items-center gap-4">
+    <div className={stacked ? "grid justify-items-start gap-2" : "flex items-center gap-4"}>
       <ChildAvatar src={src} name={name} size={size} />
-      <div className="grid gap-1.5">
+      <div className={stacked ? "flex items-center gap-1" : "grid gap-1.5"}>
         <input
           ref={input}
           type="file"
@@ -49,8 +49,8 @@ export function ChildPhoto({ childId, photo, name, size = 96 }: { childId: numbe
             if (f) void send("PUT", f);
           }}
         />
-        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => input.current?.click()}>
-          <Icon name="photo" size={16} /> {busy ? "Saving…" : src ? "Change photo" : "Add photo"}
+        <Button type="button" size="sm" variant={stacked ? "ghost" : "outline"} className={stacked ? "-ml-2.5 text-muted-foreground" : undefined} disabled={busy} onClick={() => input.current?.click()}>
+          {!stacked && <Icon name="photo" size={16} />} {busy ? "Saving…" : src ? "Change photo" : "Add photo"}
         </Button>
         {src && (
           <Button type="button" size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" disabled={busy} onClick={() => send("DELETE")}>

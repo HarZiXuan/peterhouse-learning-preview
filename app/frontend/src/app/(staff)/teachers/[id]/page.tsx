@@ -1,19 +1,15 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { ApprovalItem, TeacherDetail, WorkspaceInfo } from "@peterhouse/shared";
-import { STATUS_LABEL } from "@peterhouse/shared";
 import { apiGet, apiGetOrNull } from "@/lib/api";
-import { SUBJECT_TINT } from "@/lib/calendar";
-import { cn } from "@/lib/utils";
-import { timeAgo } from "@/components/ui";
+import { ChildAvatar, timeAgo } from "@/components/ui";
+import { TeacherActions } from "./TeacherActions";
+import { TeacherClassesTable, TeacherReportsTable } from "./TeacherTables";
 import { BackLink } from "@/components/back-link";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SectionCard, StatStrip } from "@/components/admin";
 
 export const dynamic = "force-dynamic";
 
-const ROLE = { lead: "Lead teacher", co: "Co-teacher", subject: "Subject teacher" } as const;
 const STATUS_ORDER: ApprovalItem["status"][] = ["submitted", "changes_requested", "approved"];
 
 /** One teacher: their classes and subjects, and where the reports of their children have got to. */
@@ -35,90 +31,51 @@ export default async function TeacherPage({ params }: { params: Promise<{ id: st
   ];
 
   return (
-    <main className="mx-auto max-w-5xl px-4 pb-16 pt-4 md:px-10 md:pt-8">
+    <main className="mx-auto max-w-6xl px-4 pb-16 pt-4 md:px-8 md:pt-6">
       <BackLink fallback={{ href: "/teachers", label: "Teachers" }} />
-      <header className="mb-6 mt-3">
-        <h1 className="font-heading text-3xl font-bold leading-tight tracking-tight md:text-4xl">{t.name}</h1>
-        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
-          <span>{t.email}</span>
-          <span>{t.role === "admin" ? "Administrator" : "Teacher"}</span>
-          <span>Last signed in {t.lastLoginAt ? timeAgo(t.lastLoginAt) : "never"}</span>
-          {!t.active && <Badge variant="outline">Deactivated</Badge>}
-        </p>
+
+      <header className="mb-5 mt-3 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3.5">
+          <ChildAvatar src={t.photo} name={t.name} size={48} />
+          <div className="grid min-w-0 gap-1">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-2xl font-semibold tracking-tight">{t.name}</h1>
+              <Badge variant="outline" className="font-medium text-muted-foreground">
+                {t.role === "admin" ? "Administrator" : "Teacher"}
+              </Badge>
+              {!t.active && <Badge variant="secondary">Deactivated</Badge>}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {t.email} · Last signed in {t.lastLoginAt ? timeAgo(t.lastLoginAt) : "never"}
+            </p>
+          </div>
+        </div>
+        <TeacherActions user={t} isMe={t.id === me.id} />
       </header>
 
-      <h2 className="mb-3 font-heading text-xl font-semibold">Classes</h2>
-      {t.classes.length === 0 ? (
-        <Card className="mb-8 border-dashed px-6 py-8 text-center text-muted-foreground shadow-none">Not in a class this semester.</Card>
-      ) : (
-        <div className="mb-8 grid gap-3 sm:grid-cols-2">
-          {t.classes.map((k) => (
-            <Card key={k.id} className="gap-2 p-4 shadow-none">
-              <p className="flex flex-wrap items-baseline justify-between gap-2">
-                <Link href={`/classes/${k.id}`} className="font-heading text-lg font-semibold underline-offset-4 hover:underline">
-                  {k.name}
-                </Link>
-                <span className="text-sm text-muted-foreground">{ROLE[k.role]}</span>
-              </p>
-              <p className="flex flex-wrap gap-1">
-                {k.subjects?.length ? (
-                  k.subjects.map((x) => (
-                    <span key={x.name} className={cn("rounded-full border px-2.5 py-0.5 text-[13px] font-semibold", SUBJECT_TINT[x.color] ?? SUBJECT_TINT.stone)}>
-                      {x.name}
-                    </span>
-                  ))
-                ) : k.role === "subject" ? null : (
-                  <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[13px] font-semibold">All subjects</span>
-                )}
-              </p>
-            </Card>
-          ))}
-        </div>
-      )}
+      <StatStrip
+        items={[
+          { label: "Classes", value: t.classes.length, icon: "classes" },
+          { label: "Approved", value: `${done} / ${reports.length}`, icon: "check" },
+          { label: "Waiting for review", value: tally[1].n, icon: "reviews" },
+          { label: "Changes requested", value: tally[2].n, icon: "edit" },
+        ]}
+      />
 
-      <h2 className="mb-1 font-heading text-xl font-semibold">Reports</h2>
-      <p className="mb-3 text-sm text-muted-foreground">
-        {reports.length === 0 ? "No children in their classes yet." : `${done} of ${reports.length} approved. ${tally.slice(1).filter((x) => x.n).map((x) => `${x.n} ${x.label.toLowerCase()}`).join(", ")}`.replace(/\.\s*$/, ".")}
-      </p>
-      {reports.length > 0 && (
-        <Card className="overflow-hidden p-0 shadow-none">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-secondary/50 hover:bg-secondary/50">
-                <TableHead className="px-4 font-bold text-foreground">Student</TableHead>
-                <TableHead className="font-bold text-foreground">Class</TableHead>
-                <TableHead className="font-bold text-foreground">Sent for review</TableHead>
-                <TableHead className="px-4 font-bold text-foreground">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((r) => (
-                <TableRow key={r.reviewId} className="relative cursor-pointer">
-                  <TableCell className="px-4 py-3">
-                    <Link
-                      href={STATUS_ORDER.includes(r.status) ? `/approvals/${r.reviewId}` : `/child/${r.reviewId}`}
-                      className="font-heading text-base font-semibold text-foreground outline-none after:absolute after:inset-0 focus-visible:after:ring-[3px] focus-visible:after:ring-ring/50"
-                    >
-                      {r.childName}
-                    </Link>
-                    {r.chineseName && <span className="ml-2 text-sm text-muted-foreground">{r.chineseName}</span>}
-                  </TableCell>
-                  <TableCell>{r.className}</TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">{r.submittedAt ? `${timeAgo(r.submittedAt)}${r.submittedBy ? ` by ${r.submittedBy}` : ""}` : "—"}</TableCell>
-                  <TableCell className="px-4">
-                    <Badge
-                      variant={r.status === "approved" ? "default" : "outline"}
-                      className={cn("font-normal", r.status === "changes_requested" && "border-warn bg-warn/15", r.status === "submitted" && "border-primary/40 text-primary")}
-                    >
-                      {STATUS_LABEL[r.status]}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
+      <div className="mt-6 grid gap-6">
+        <SectionCard title="Classes" icon="classes" count={t.classes.length} description="Where they teach this semester and which subjects they rate.">
+          <TeacherClassesTable classes={t.classes} />
+        </SectionCard>
+
+        <SectionCard
+          title="Reports"
+          icon="reports"
+          count={reports.length}
+          description={reports.length === 0 ? "No children in their classes yet." : `${done} of ${reports.length} approved${tally.slice(1).some((x) => x.n) ? `, ${tally.slice(1).filter((x) => x.n).map((x) => `${x.n} ${x.label.toLowerCase()}`).join(", ")}` : ""}.`}
+        >
+          <TeacherReportsTable reports={rows} />
+        </SectionCard>
+      </div>
     </main>
   );
 }

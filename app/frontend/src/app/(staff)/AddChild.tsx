@@ -8,6 +8,7 @@ import type { ClassSummary, Guardian } from "@peterhouse/shared";
 import { LEVEL_PROBLEM_TEXT, birthdayRange, classLevel, levelForBirthday } from "@peterhouse/shared";
 import { Icon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -114,6 +115,7 @@ export function AddChild({
         joinedOn: joinedOn || today(),
         guardians: guardians.filter((g) => g.name.trim() || g.phone.trim() || g.email.trim()),
         notes: String(f.get("notes") ?? "").trim(),
+        photoConsent: f.get("photoConsent") === "on",
       }),
     });
     setBusy(false);
@@ -238,6 +240,12 @@ export function AddChild({
                 <Input id="child-joined" type="date" value={joinedOn} onChange={(e) => setJoinedOn(e.target.value)} />
               </div>
             </div>
+            <Label htmlFor="child-consent" className="flex items-start gap-2 text-sm font-normal">
+              <Checkbox id="child-consent" name="photoConsent" className="mt-0.5" />
+              <span>
+                <span className="font-semibold">Parents gave photo consent.</span> Without it, teachers cannot add photos and none print on the report.
+              </span>
+            </Label>
           </Section>
 
           <Section title="Parents and guardians" hint="optional">

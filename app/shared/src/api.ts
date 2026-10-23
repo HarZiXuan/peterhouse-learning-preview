@@ -20,6 +20,8 @@ export type Season = "June" | "December";
 
 export type WorkspaceInfo = {
   user: SessionUser;
+  /** The signed-in person's own profile photo, or null. */
+  myPhoto: string | null;
   school: SchoolDetails;
   period: { season: Season; year: number };
   hasAi: boolean;
@@ -82,7 +84,16 @@ export type ClassDetail = ClassSummary & {
    * The report's learning areas and who rates each in this class: set on the class page, else the teacher tagged with
    * the matching subject, else the lead teacher.
    */
-  areaTeachers: { key: string; name: string; teacher: StaffRef | null; source: "set" | "subject" | "lead" }[];
+  areaTeachers: {
+    key: string;
+    name: string;
+    teacher: StaffRef | null;
+    source: "set" | "subject" | "lead";
+    /** The subject that teaches this area, if any. */
+    subject: string | null;
+    /** Everyone tagged with that subject in this class. */
+    teachers: StaffRef[];
+  }[];
 };
 
 export type ClassesView = {
@@ -97,7 +108,13 @@ export type ClassesView = {
 export type Guardian = { name: string; relationship: string; phone: string; email: string };
 
 /** What the school keeps about a child besides their reviews. Only the administrator changes it. */
-export type ChildInfo = { joinedOn: string; guardians: Guardian[]; notes: string };
+export type ChildInfo = {
+  joinedOn: string;
+  guardians: Guardian[];
+  notes: string;
+  /** The parents agreed to photos in the report. Without it no photo can be added and none prints. */
+  photoConsent: boolean;
+};
 
 /** One semester at school: the class they were in and that semester's review. */
 export type ChildSemester = {
@@ -174,7 +191,7 @@ export type WriteOutcome = { ok: true; provider: string; fellBack: string | null
 
 export type ReviewPhoto = { id: number; areaKey: string | null };
 
-/** Where a report is in "teachers write, the administrator approves" (CHANGES-TO-MAKE changes 1 and 3). */
+/** Where a report is in "teachers write, the administrator approves" (BUILT.md changes 1 and 3). */
 export type Workflow = {
   status: ReviewStatus;
   /** Why this person cannot change the ratings or the wording right now, or null when they can. */
@@ -193,6 +210,8 @@ export type Workflow = {
   canTakeBack: boolean;
   /** The PDF for families is made only once the report is approved. */
   canDownload: boolean;
+  /** The administrator may give a report they took over back to its teacher. */
+  canHandBack: boolean;
 };
 
 export type ReviewView = {
@@ -209,6 +228,8 @@ export type ReviewView = {
   hasReport: boolean;
   photos: ReviewPhoto[];
   photosPerArea: number;
+  /** The parents gave photo consent: without it no photo can be added and none prints. */
+  photoConsent: boolean;
   semester: string;
   updatedAt: string;
   workflow: Workflow;
@@ -278,7 +299,15 @@ export type ReportData = {
   previousSeason: string | null;
 };
 
-export type ReportSection = { key: string; title: string; text: string };
+export type ReportSection = {
+  key: string;
+  title: string;
+  text: string;
+  /** What the checks found in this paragraph (a number, a banned word, another child's name…). */
+  flags?: string[];
+  /** The ratings behind it changed after it was written: read it again before sending. */
+  stale?: boolean;
+};
 
 export type ReportView = {
   reviewId: number;
@@ -290,6 +319,8 @@ export type ReportView = {
   notes: string[];
   provider: string;
   workflow: Workflow;
+  /** The date printed on the report: when it was approved, or null for today. */
+  reportDate: string | null;
 };
 
 /** One teacher's page of the report: how it will print, and their part of it to check and send to the lead. */
@@ -365,6 +396,8 @@ export type UserSummary = {
   role: Role;
   active: boolean;
   mustChangePassword: boolean;
+  /** Profile photo URL, or null when there is none. */
+  photo: string | null;
   lastLoginAt: string | null;
   /** Set while five wrong passwords keep the account locked. */
   lockedUntil: string | null;
@@ -392,6 +425,8 @@ export type NewChildInput = {
   guardians?: Guardian[];
   /** The school's notes about the child. */
   notes?: string;
+  /** The parents agreed to photos in the report. */
+  photoConsent?: boolean;
 };
 
 // ─── Admin: editing the questions ───────────────────────────────────────────
@@ -448,7 +483,7 @@ export type QuestionBankView = {
 };
 
 
-// ─── Class calendar (CHANGES-TO-MAKE change 5) ──────────────────────────────
+// ─── Class calendar (BUILT.md change 5) ──────────────────────────────
 
 export type CalendarKind = "event" | "closure" | "deadline";
 export type CalendarAudience = "school" | "levels" | "classes";
@@ -475,7 +510,7 @@ export type CalendarEventInput = Omit<CalendarEvent, "id">;
 /** A class's weekly hours, from its first lesson to its last each day (1 = Monday … 7 = Sunday). */
 export type Timetable = { classId: number; days: { weekday: number; start: string; end: string }[] };
 
-// ─── Subject timetable (CHANGES-TO-MAKE change 7) ───────────────────────────
+// ─── Subject timetable (BUILT.md change 7) ───────────────────────────
 
 /** Soft colours a subject can take; the screens turn each into a tint with dark text. */
 /** Each subject has its own colour: no two subjects share one. */
@@ -549,4 +584,6 @@ export type CalendarView = {
 export type CalendarLink = { path: string };
 
 /** Where a child's profile photo is served; `at` (when it last changed) makes a new photo a new URL. */
+/** A staff member's profile photo; the version in the URL changes when the photo does. */
+export const userPhotoUrl = (userId: number, at: string | Date | null | undefined) => (at ? `/api/users/${userId}/photo?v=${new Date(at).getTime()}` : null);
 export const childPhotoUrl = (childId: number, at: string | Date | null | undefined) => (at ? `/api/children/${childId}/photo?v=${new Date(at).getTime()}` : null);

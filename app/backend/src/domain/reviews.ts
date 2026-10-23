@@ -7,6 +7,7 @@ import type {
   Pronoun,
   ReportData,
   ReviewStatus,
+  SchoolDetails,
   Rubric,
   SaveResult,
   SessionUser,
@@ -66,6 +67,8 @@ export type ReviewRow = {
   report_version: number;
   approved_by: number | null;
   approved_at: string | null;
+  /** What families get, frozen when the report was approved (older approvals kept only the wording). */
+  approved_snapshot: ApprovedReport | null;
   submitted_by: number | null;
   submitted_at: string | null;
   change_note: string;
@@ -98,7 +101,7 @@ export type ReviewRow = {
 const REVIEW_SELECT = `
   SELECT r.id, r.child_id, r.term_id, r.class_id, r.status, r.rubric, r.rubric_version_id, r.highlight, r.highlight_by, r.highlight_at, r.no_photo,
          r.staff_note, r.strengths, r.next_steps, r.draft, r.report_version, r.approved_by, r.approved_at, r.updated_at,
-         r.submitted_by, r.submitted_at, r.change_note, r.change_note_by, r.change_note_at, r.taken_over_by, r.taken_over_at, r.admin_edited,
+         r.approved_snapshot, r.submitted_by, r.submitted_at, r.change_note, r.change_note_by, r.change_note_at, r.taken_over_by, r.taken_over_at, r.admin_edited,
          c.preferred_name, c.last_name, c.legal_name, c.chinese_name, c.date_of_birth, c.pronoun, c.photo_consent, c.photo_at, c.status AS child_status,
          k.name AS class_name, k.level AS class_level,
          CASE t.semester WHEN 1 THEN 'June' ELSE 'December' END AS season, t.year, t.status AS term_status
@@ -107,7 +110,16 @@ const REVIEW_SELECT = `
   JOIN classes k ON k.id = r.class_id
   JOIN terms t ON t.id = r.term_id`;
 
-type RawReview = Omit<ReviewRow, "rubric" | "draft" | "opened"> & { rubric: unknown; draft: string | null };
+/** The approved report exactly as it printed: the wording, the pages and the school details. */
+export type ApprovedReport = { draft: Draft; data?: ReportData; school?: SchoolDetails; approvedAt?: string };
+
+type RawReview = Omit<ReviewRow, "rubric" | "draft" | "opened" | "approved_snapshot"> & { rubric: unknown; draft: string | null; approved_snapshot: string | null };
+
+function openSnapshot(raw: string | null): ApprovedReport | null {
+  const v = openJsonOrNull<ApprovedReport | Draft>(raw, "reviews.approved_snapshot");
+  if (!v) return null;
+  return "paragraphs" in v ? { draft: v } : v;
+}
 
 async function hydrate(raw: RawReview): Promise<ReviewRow> {
   return {
@@ -120,6 +132,7 @@ async function hydrate(raw: RawReview): Promise<ReviewRow> {
     staff_note: openText(raw.staff_note, "reviews.staff_note"),
     change_note: openText(raw.change_note, "reviews.change_note"),
     draft: openJsonOrNull<Draft>(raw.draft, "reviews.draft"),
+    approved_snapshot: openSnapshot(raw.approved_snapshot),
     preferred_name: openText(raw.preferred_name, "children.preferred_name"),
     last_name: openText(raw.last_name, "children.last_name"),
     legal_name: openText(raw.legal_name, "children.legal_name"),
@@ -163,7 +176,9 @@ export const reviewRubric = (r: Pick<ReviewRow, "rubric">): Rubric => r.rubric;
  * edits only a report they have taken over, and nobody edits an approved one.
  */
 export function lockReason(user: SessionUser, r: ReviewRow): string | null {
-  if (r.term_status !== "open") return "This review belongs to a finished semester.";
+  // A finished semester keeps its approved reports as they are, but a report it closed on before approval can still be
+  // finished, sent and approved, so that family still gets theirs.
+  if (r.term_status === "locked") return "This review belongs to a locked semester.";
   if (r.status === "approved") return "This report is approved. An administrator can send it back if something must change.";
   if (user.role === "admin") return r.taken_over_by ? null : "Teachers write the reports. Take this one over from Reports to change it yourself.";
   if (r.taken_over_by) return "An administrator has taken this report over, so it cannot be changed here for now.";
@@ -198,15 +213,32 @@ export async function getReviewForEdit(user: SessionUser, id: number, c?: Db, ar
 }
 
 /**
- * Rule 2, frozen wording per review: the first time a review is opened it copies the current published question
- * set. Later edits only reach reviews not opened yet, so past and in-progress reports never change.
+ * Rule 2, frozen wording per review: the first time a rating is saved the review copies the current published question
+ * set. Later edits only reach reviews nobody has rated yet, so past and in-progress reports never change. Only looking
+ * at a review (as the administrator often does before publishing new questions) does not freeze it.
  */
 export async function openReview(r: ReviewRow): Promise<ReviewRow> {
-  if (r.opened || r.status === "approved" || r.term_status !== "open") return r;
+  if (r.opened || r.status === "approved" || r.term_status === "locked") return r;
   const live = await publishedRubric();
   // Only the questions for the child's level (change 8): a Playgroup child is not asked about letters.
   await run("UPDATE reviews SET rubric = $1::jsonb, rubric_version_id = $2 WHERE id = $3 AND rubric IS NULL", [JSON.stringify(rubricForLevel(live.rubric, r.class_level)), live.id, r.id]);
   return (await getReviewRow(r.id))!;
+}
+
+/**
+ * After a corrected birthday moves a child to a class of another level, their review asks that level's questions.
+ * Ratings carry over where the question is the same (same key); the written paragraphs are marked to read again.
+ * An approved report stays as it was approved.
+ */
+export async function refitToLevel(reviewId: number) {
+  const r = (await getReviewRow(reviewId))!;
+  if (!r.opened || r.status === "approved") return;
+  const live = await publishedRubric();
+  await tx(async (c) => {
+    await run("UPDATE reviews SET rubric = $1::jsonb, rubric_version_id = $2 WHERE id = $3", [JSON.stringify(rubricForLevel(live.rubric, r.class_level)), live.id, reviewId], c);
+    await markStale(c, r, r.draft?.paragraphs.map((p) => p.key) ?? []);
+    await refreshStatus(c, reviewId);
+  });
 }
 
 export type AreaMeta = { updatedBy: string | null; updatedAt: string | null };
@@ -258,7 +290,9 @@ export async function loadNotes(reviewId: number): Promise<Record<string, string
 }
 
 export async function setChineseName(user: SessionUser, id: number, name: string) {
-  const r = await getReviewForUser(user, id);
+  // The name prints on the report, so it is the lead teacher's (or the administrator's, on a report they took over),
+  // and not once the report is approved.
+  const r = await getReviewForEdit(user, id);
   await run("UPDATE children SET chinese_name = $1 WHERE id = $2", [sealText(name.trim().slice(0, 40), "children.chinese_name"), r.child_id]);
 }
 
@@ -298,11 +332,10 @@ async function markStale(c: Db, r: ReviewRow, keys: string[]) {
  * Saves one area. Changes save per area, so two people editing different areas never lose work.
  */
 export async function saveArea(user: SessionUser, id: number, areaKey: string, answer: AreaAnswer): Promise<SaveResult> {
-  const r = await getReviewForEdit(user, id, undefined, areaKey);
+  // The first rating freezes the question set this review uses (rule 2).
+  const r = await openReview(await getReviewForEdit(user, id, undefined, areaKey));
   const area = r.rubric.areas.find((a) => a.key === areaKey);
   if (!area) return { ok: false, error: "Unknown area." };
-
-  if (!r.opened) throw new HttpError(409, "Open this child's review first.");
   // Sanitise: only known questions, scores 0–5, a short comment, picks from this domain's list.
   const clean: AreaAnswer = {
     skills: Object.fromEntries(
@@ -465,6 +498,10 @@ export async function writeDraft(user: SessionUser, id: number, opts: { provider
   if (r.status !== "ready" && r.status !== "written" && r.status !== "changes_requested") {
     return { ok: false, error: "This review is not ready yet. Finish the readiness check first." };
   }
+  // A rating cleared after the report was written leaves the review short again.
+  if (readinessGaps(r.rubric, (await loadAnswers(r.id, r.rubric)).answers).length) {
+    return { ok: false, error: "Some statements are not rated yet. Rate each one, or mark it Not seen yet, first." };
+  }
   // The lead writes the report once every other teacher has sent their part.
   const waiting = await waitingParts(r, r.rubric.areas, user.role === "admin" ? null : user.id);
   if (waiting.length && user.role !== "admin") {
@@ -594,6 +631,8 @@ export async function editParagraph(user: SessionUser, id: number, key: string, 
     const kind = key === "opening" ? "opening" : key === "closing" ? "closing" : "area";
     para.text = text.slice(0, 2000);
     para.edited = true;
+    // The teacher has read it again after the ratings changed and put it right themselves.
+    para.stale = false;
     para.flags = qualityFlags(para.text, kind, {
       neverUse: r.rubric.neverUse,
       notObservedSkills: notObservedSkillNames(r.rubric, answers, r.pronoun, key.startsWith("area:") ? key.slice(5) : undefined),
@@ -631,6 +670,16 @@ export async function restoreDraftVersion(user: SessionUser, id: number, version
 
 // ─── Report data ─────────────────────────────────────────────────────────
 
+/**
+ * The report as families see it. An approved report prints exactly as it was approved, whatever changes later
+ * (names, photos, class teachers, school details, settings); any other report is built from the latest answers.
+ */
+export async function reportFor(r: ReviewRow): Promise<{ data: ReportData; school: SchoolDetails; reportDate: string | null }> {
+  const snap = r.status === "approved" ? r.approved_snapshot : null;
+  if (snap?.data && snap.school) return { data: snap.data, school: snap.school, reportDate: snap.approvedAt ?? r.approved_at };
+  return { data: await buildReportData(r), school: await getSchool(), reportDate: r.status === "approved" ? r.approved_at : null };
+}
+
 export async function buildReportData(r: ReviewRow): Promise<ReportData> {
   const rubric = r.rubric;
   const { answers } = await loadAnswers(r.id, rubric);
@@ -653,7 +702,8 @@ export async function buildReportData(r: ReviewRow): Promise<ReportData> {
   const lead = staff.filter((s) => s.role === "lead").map((s) => s.name);
   const co = staff.filter((s) => s.role === "co").map((s) => s.name);
   const fallback = school.teachers.split(",").map((t) => t.trim()).filter(Boolean);
-  const allowed = new Set(await reportPhotoIds(r.id));
+  // Photos print only for a child whose parents gave photo consent.
+  const allowed = new Set(r.photo_consent ? await reportPhotoIds(r.id) : []);
   const photos = (await listPhotos(r.id)).filter((p) => allowed.has(p.id));
   // The cover photo is chosen on its own; any other photo belongs to a learning area (or, from before that, to none).
   const cover = photos.find((p) => p.area_key === COVER_PHOTO_KEY);
@@ -669,7 +719,7 @@ export async function buildReportData(r: ReviewRow): Promise<ReportData> {
     season: r.season,
     year: r.year,
     // An approved report keeps the cover it was approved with; every other report shows the child's profile photo.
-    coverPhoto: r.status === "approved" && cover ? `/api/photos/${cover.id}` : childPhotoUrl(r.child_id, r.photo_at),
+    coverPhoto: !r.photo_consent ? null : r.status === "approved" && cover ? `/api/photos/${cover.id}` : childPhotoUrl(r.child_id, r.photo_at),
     photoIds: ordered.map((p) => p.id),
     areas: rubric.areas.map((a) => {
       const ans = answers[a.key];

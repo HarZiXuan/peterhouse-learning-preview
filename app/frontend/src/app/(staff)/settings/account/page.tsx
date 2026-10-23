@@ -3,9 +3,10 @@ import { apiGet } from "@/lib/api";
 import { ChangePasswordForm } from "@/app/change-password/ChangePasswordForm";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SettingsSection } from "../SettingsSection";
+import { MyPhoto } from "./MyPhoto";
 
 export default async function AccountPage() {
-  const { user, classes } = await apiGet<WorkspaceInfo>("/workspace");
+  const { user, classes, myPhoto } = await apiGet<WorkspaceInfo>("/workspace");
   const admin = user.role === "admin";
   const rows: [string, React.ReactNode][] = [
     ["Name", user.name],
@@ -30,7 +31,8 @@ export default async function AccountPage() {
             <CardTitle className="font-heading text-lg font-semibold">Your details</CardTitle>
             <CardDescription>{admin ? "Change them on People and sign-ins." : "Only an administrator can change these. Ask them if something is wrong."}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="grid gap-5">
+            <MyPhoto userId={user.id} photo={myPhoto} name={user.name} />
             <dl className="grid gap-3 text-sm sm:grid-cols-[7rem_minmax(0,1fr)]">
               {rows.map(([k, v]) => (
                 <div key={k} className="contents">

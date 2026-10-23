@@ -1,4 +1,4 @@
-// Teachers own the report; the administrator reviews it (CHANGES-TO-MAKE changes 1 and 3).
+// Teachers own the report; the administrator reviews it (BUILT.md changes 1 and 3).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AreaAnswer, SessionUser } from "@peterhouse/shared";
 import { makeClass, setupTestDb } from "./helpers";

@@ -129,3 +129,4 @@ export const takeBackAction = async (reviewId: number) => workflow(`/reviews/${r
 export const approveAction = async (reviewId: number) => workflow(`/admin/reviews/${reviewId}/approve`);
 export const requestChangesAction = async (reviewId: number, note: string) => workflow(`/admin/reviews/${reviewId}/request-changes`, { note });
 export const takeOverAction = async (reviewId: number) => workflow(`/admin/reviews/${reviewId}/take-over`);
+export const handBackAction = async (reviewId: number) => workflow(`/admin/reviews/${reviewId}/hand-back`);

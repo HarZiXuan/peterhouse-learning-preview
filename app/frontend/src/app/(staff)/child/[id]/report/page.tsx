@@ -51,7 +51,7 @@ export default async function ReportViewPage({ params }: { params: Promise<{ id:
         Written by {v.provider === "sentence_bank" ? "the built-in writer" : `AI (${v.provider})`}.{" "}
         {v.workflow.locked ? v.workflow.locked : "Not quite right? Edit any wording in the boxes and watch the report change."}
       </p>
-      <ReportWorkbench reviewId={id} locked={v.workflow.locked} data={v.data} school={v.school} sections={v.sections} reportDateIso={new Date().toISOString()} />
+      <ReportWorkbench reviewId={id} locked={v.workflow.locked} data={v.data} school={v.school} sections={v.sections} reportDateIso={v.reportDate ?? new Date().toISOString()} />
     </main>
   );
 }

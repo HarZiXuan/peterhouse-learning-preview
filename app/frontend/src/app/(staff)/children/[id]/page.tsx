@@ -2,14 +2,15 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BackLink } from "@/components/back-link";
 import type { ChildProfile, ClassesView, WorkspaceInfo } from "@peterhouse/shared";
-import { STATUS_LABEL, classLevel } from "@peterhouse/shared";
+import { classLevel } from "@peterhouse/shared";
 import { apiGet } from "@/lib/api";
-import { ChildPhoto } from "@/components/ChildPhoto";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-import { LEVEL_TINT, STATUS_TONE } from "../../classes/shared";
-import { EditInfo, ProfileActions } from "./Profile";
+import { Mail, Phone } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { SectionCard, StatStrip } from "@/components/admin";
+import { ChildAvatar, initials } from "@/components/ui";
+import type { IconName } from "@/components/icons";
+import { EditInfo, ProfileActions, SemestersTable } from "./Profile";
 
 export const dynamic = "force-dynamic";
 
@@ -27,30 +28,6 @@ function span(from: string, to: Date): string {
   return parts.length ? parts.join(" ") : "Under a month";
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="grid content-start gap-1 px-5 py-4">
-      <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{label}</p>
-      <p className="font-heading text-2xl font-semibold leading-tight">{value}</p>
-      {sub && <p className="text-[13px] text-muted-foreground">{sub}</p>}
-    </div>
-  );
-}
-
-function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <Card className="gap-3 p-5 shadow-none">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-heading text-lg font-semibold">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </Card>
-  );
-}
-
-const Missing = ({ children }: { children: React.ReactNode }) => <p className="rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground">{children}</p>;
-
 /** One child: who they are, every semester they were at school with its report, and who to call. */
 export default async function ChildProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -60,102 +37,96 @@ export default async function ChildProfilePage({ params }: { params: Promise<{ i
   const now = new Date();
   const current = child.semesters.find((s) => s.current) ?? null;
   const latest = current ?? child.semesters[0] ?? null;
-  const approved = child.semesters.filter((s) => s.status === "approved").length;
   const turns = child.dateOfBirth ? now.getUTCFullYear() - Number(child.dateOfBirth.slice(0, 4)) : null;
 
+  const facts: { label: string; value: string; note?: string; icon: IconName }[] = [
+    { icon: "calendar", label: "Birthday", value: child.dateOfBirth ? longDate(child.dateOfBirth) : "Not on file", note: child.dateOfBirth ? `${span(child.dateOfBirth, now)} old${turns ? `, turns ${turns} this year` : ""}` : undefined },
+    { icon: "school", label: "Joined Peterhouse", value: longDate(child.joinedOn), note: `${span(child.joinedOn, now)} ago` },
+    { icon: "camera", label: "Photo consent", value: child.photoConsent ? "Yes" : "No", note: child.photoConsent ? "photos print on the report" : "no photos on the report" },
+    { icon: "semester", label: "Semesters", value: String(child.semesters.length), note: current ? "in a class now" : undefined },
+  ];
+
   return (
-    <main className="mx-auto max-w-6xl px-4 pb-16 pt-6 md:px-10 md:pt-10">
-      <BackLink fallback={{ href: "/children", label: "Children" }} className="mb-4" />
+    <main className="mx-auto max-w-6xl px-4 pb-16 pt-4 md:px-8 md:pt-6">
+      <BackLink fallback={{ href: "/children", label: "Children" }} />
 
-      <Card className="mb-6 gap-0 overflow-hidden p-0 shadow-none">
-        <div className="flex flex-wrap items-start gap-5 p-5 md:p-6">
-          <ChildPhoto childId={child.id} photo={child.photo} name={child.firstName || child.name} size={88} />
-          <div className="grid min-w-0 flex-1 basis-60 gap-2">
-            <h1 className="font-heading text-3xl font-bold leading-tight tracking-tight md:text-4xl">
-              {child.name}
-              {child.chineseName && <span className="ml-3 font-medium text-muted-foreground">{child.chineseName}</span>}
-            </h1>
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              {latest && <Badge className={cn("border-transparent font-bold", LEVEL_TINT[latest.level])}>{latest.level}</Badge>}
+      <header className="mb-5 mt-3 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3.5">
+          <ChildAvatar src={child.photo} name={child.firstName || child.name} size={48} />
+          <div className="grid min-w-0 gap-1">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {child.name}
+                {child.chineseName && <span className="ml-2.5 text-lg font-normal text-muted-foreground">{child.chineseName}</span>}
+              </h1>
               {latest && (
-                <Link href={`/classes/${latest.classId}`} className="font-semibold text-foreground underline-offset-4 hover:underline">
-                  {latest.className}
-                </Link>
+                <Badge variant="outline" className="font-medium text-muted-foreground">
+                  {classLevel(latest.level).name}
+                </Badge>
               )}
-              {latest && latest.teachers.length > 0 && <span className="text-muted-foreground">· {latest.teachers.join(", ")}</span>}
-              <span className="text-muted-foreground">· {child.pronoun === "she" ? "she / her" : "he / him"}</span>
-              {child.left && <Badge variant="outline" className="font-normal">Left {child.leftAt ? longDate(child.leftAt) : ""}</Badge>}
+              {child.left && <Badge variant="secondary">Left {child.leftAt ? longDate(child.leftAt) : ""}</Badge>}
             </div>
-          </div>
-          <ProfileActions child={child} current={current} classes={view.classes} year={view.year} />
-        </div>
-        <div className="grid grid-cols-2 border-t md:grid-cols-4 [&>*:nth-child(n+2)]:border-l max-md:[&>*:nth-child(3)]:border-l-0 max-md:[&>*:nth-child(n+3)]:border-t">
-          <Stat label="Age" value={child.dateOfBirth ? span(child.dateOfBirth, now) : "—"} sub={turns ? `Turns ${turns} in ${now.getUTCFullYear()}` : "No birthday on file"} />
-          <Stat label="Birthday" value={child.dateOfBirth ? longDate(child.dateOfBirth) : "—"} sub={latest ? classLevel(latest.level).name : undefined} />
-          <Stat label="Joined" value={longDate(child.joinedOn)} sub={`${span(child.joinedOn, now)} at Peterhouse`} />
-          <Stat label="Reports" value={`${approved} approved`} sub={`${child.semesters.length} ${child.semesters.length === 1 ? "semester" : "semesters"} at school`} />
-        </div>
-      </Card>
-
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <Section title="Semesters and reports">
-          {child.semesters.length === 0 ? (
-            <Missing>No semesters yet.</Missing>
-          ) : (
-            <ul className="-mx-5 divide-y border-t">
-              {child.semesters.map((s) => (
-                <li key={s.reviewId} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
-                  <div className="min-w-0 flex-1 basis-56">
-                    <p className="font-semibold">
-                      {s.year} · Semester {s.semester}
-                      {s.current && <span className="ml-2 text-[13px] font-normal text-muted-foreground">this semester</span>}
-                    </p>
-                    <p className="text-[13px] text-muted-foreground">
-                      {s.level} · {s.className}
-                      {s.teachers.length > 0 && ` · ${s.teachers.join(", ")}`}
-                    </p>
-                  </div>
-                  <Badge className={cn("whitespace-nowrap font-normal", STATUS_TONE[s.status])}>{STATUS_LABEL[s.status]}</Badge>
-                  <Link href={s.hasReport ? `/child/${s.reviewId}/report` : `/child/${s.reviewId}`} className="w-24 text-right text-sm font-semibold text-primary hover:underline">
-                    {s.hasReport ? "Open report" : "Open review"}
+            <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
+              {latest && (
+                <>
+                  <Link href={`/classes/${latest.classId}`} className="font-medium text-foreground underline-offset-4 hover:text-foreground hover:underline">
+                    {latest.className}
                   </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
+                  {latest.teachers.length > 0 && <span>· {latest.teachers.join(", ")}</span>}
+                  <span>·</span>
+                </>
+              )}
+              <span>{child.pronoun === "she" ? "she / her" : "he / him"}</span>
+            </p>
+          </div>
+        </div>
+        <ProfileActions child={child} current={current} classes={view.classes} year={view.year} />
+      </header>
 
-        <div className="grid gap-6">
-          <Section title="Parents and guardians" action={<EditInfo child={child} />}>
+      <StatStrip items={facts} />
+
+      <div className="mt-6 grid gap-6">
+        <SectionCard title="Semesters and reports" icon="semester" count={child.semesters.length}>
+          <SemestersTable semesters={child.semesters} />
+        </SectionCard>
+
+        <div className="grid items-start gap-6 md:grid-cols-2">
+          <SectionCard title="Parents and guardians" icon="users" count={child.guardians.length} action={<EditInfo child={child} />}>
             {child.guardians.length === 0 ? (
-              <Missing>No parents or guardians on file yet.</Missing>
+              <p className="px-4 py-6 text-sm text-muted-foreground">No parents or guardians on file yet.</p>
             ) : (
-              <ul className="grid gap-3">
+              <ul className="divide-y">
                 {child.guardians.map((g, i) => (
-                  <li key={i} className="grid gap-0.5 text-sm">
-                    <p className="font-semibold">
-                      {g.name || "No name"} {g.relationship && <span className="font-normal text-muted-foreground">· {g.relationship}</span>}
-                    </p>
-                    {g.phone && (
-                      <a href={`tel:${g.phone.replace(/\s/g, "")}`} className="text-foreground hover:underline">
-                        {g.phone}
-                      </a>
-                    )}
-                    {g.email && (
-                      <a href={`mailto:${g.email}`} className="break-all text-muted-foreground hover:underline">
-                        {g.email}
-                      </a>
-                    )}
+                  <li key={i} className="flex gap-3 px-4 py-3">
+                    <Avatar className="size-8">
+                      <AvatarFallback className="text-xs font-semibold">{initials(g.name || "?")}</AvatarFallback>
+                    </Avatar>
+                    <div className="grid min-w-0 gap-1 text-sm">
+                      <p className="font-medium">
+                        {g.name || "No name"} {g.relationship && <span className="font-normal text-muted-foreground">· {g.relationship}</span>}
+                      </p>
+                      {g.phone && (
+                        <a href={`tel:${g.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-2 text-foreground hover:text-foreground hover:underline">
+                          <Phone className="size-3.5 text-muted-foreground" aria-hidden /> {g.phone}
+                        </a>
+                      )}
+                      {g.email && (
+                        <a href={`mailto:${g.email}`} className="inline-flex min-w-0 items-center gap-2 text-muted-foreground hover:text-foreground hover:underline">
+                          <Mail className="size-3.5 shrink-0" aria-hidden /> <span className="break-all">{g.email}</span>
+                        </a>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
             )}
-          </Section>
+          </SectionCard>
 
-
-          <Section title="Staff notes" action={<EditInfo child={child} />}>
-            {child.notes ? <p className="whitespace-pre-line text-sm">{child.notes}</p> : <Missing>No notes yet. Add pickup arrangements or anything staff should know.</Missing>}
-          </Section>
+          <SectionCard title="Staff notes" icon="info" action={<EditInfo child={child} />}>
+            <div className="px-4 py-3 text-sm">
+              {child.notes ? <p className="whitespace-pre-line">{child.notes}</p> : <p className="text-muted-foreground">No notes yet. Add pickup arrangements, allergies or anything staff should know.</p>}
+            </div>
+          </SectionCard>
         </div>
       </div>
     </main>

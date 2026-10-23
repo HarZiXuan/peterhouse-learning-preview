@@ -1,27 +1,24 @@
-/* ═══ Chalk & Crest ════════════════════════════════════════
-   The Peterhouse Learning Review staff interface (Claude Design canvas "Learning Review Interface").
-   Chalk ground, paper cards with hairlines, ink text, crest red for action and progress, sun for
-   highlights and "not seen", leaf for done. Bricolage Grotesque headings, Figtree body, Noto Sans SC
-   for Chinese. (design/tokens.css holds the school website's brand tokens; the printed report keeps those
-   colours and its own styles in components/report/report.module.css.) */
+/* Older staff styles not yet moved to shadcn/Tailwind. Their tokens follow the staff theme in globals.css
+   (docs/DESIGN-SYSTEM.md): zinc neutrals, crest red for the main action, Inter, Noto Sans SC for Chinese.
+   The printed report keeps its own colours and styles in components/report/report.module.css. */
 :root {
-  --ground: #f4f4f1;
+  --ground: #fafafa;
   --card: #ffffff;
-  --ink: #17171c;
-  --muted: #5b5d66;
-  --line: #e2e2dd;
-  --line-2: #cfcfc8;
-  --rung: #ebebe6;
-  --rung-hover: #d9d9d2;
-  --crest: #b0202a;
+  --ink: #18181b;
+  --muted: #71717a;
+  --line: #e4e4e7;
+  --line-2: #d4d4d8;
+  --rung: #f4f4f5;
+  --rung-hover: #e4e4e7;
+  --crest: #ae1d25;
   --crest-dark: #8e1820;
   --crest-tint: #fbeaea;
   --sun: #ffc83d;
   --sun-tint: #fff4d6;
   --sun-ink: #6a4b00;
   --sun-edge: #e0a800;
-  --leaf: #2f6b45;
-  --leaf-tint: #e5f1e8;
+  --leaf: #15803d;
+  --leaf-tint: #f0fdf4;
 
   /* Older names still used by inline styles. */
   --brand: var(--crest);
@@ -31,8 +28,8 @@
   --surface: var(--card);
   --on-brand: #fff;
 
-  --font-display: var(--font-jost), "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  --font-body: var(--font-nunito), "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-display: var(--font-inter), "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-body: var(--font-inter), "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
   --font-han: var(--font-noto-sc), "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --font-heading: var(--font-display);
 
@@ -42,7 +39,7 @@
   color-scheme: light;
 }
 
-body { font-family: var(--font-body); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-body); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
 a { color: var(--crest); }
 a:hover { color: var(--crest-dark); }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -50,7 +47,7 @@ button { cursor: pointer; }
 img { display: block; max-width: 100%; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-h1, h2, h3 { font-family: var(--font-display); font-weight: 700; color: var(--ink); line-height: 1.15; letter-spacing: -0.01em; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; color: var(--ink); line-height: 1.15; letter-spacing: -0.01em; }
 h1 { font-size: 40px; letter-spacing: -0.02em; line-height: 1.05; }
 h2 { font-size: 22px; }
 h3 { font-size: 17px; }

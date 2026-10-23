@@ -22,7 +22,8 @@ export async function childProfile(id: number): Promise<ChildProfile> {
     guardians: string;
     notes: string;
     photo_at: string | null;
-  }>("SELECT id, preferred_name, last_name, legal_name, chinese_name, date_of_birth, pronoun, status, left_at, joined_on::text AS joined_on, guardians, notes, photo_at FROM children WHERE id = $1", [id]);
+    photo_consent: boolean;
+  }>("SELECT id, preferred_name, last_name, legal_name, chinese_name, date_of_birth, pronoun, status, left_at, joined_on::text AS joined_on, guardians, notes, photo_at, photo_consent FROM children WHERE id = $1", [id]);
   if (!c) throw notFound("This child");
   const { termId } = await workspace();
   const rows = await many<{ id: number; term_id: number; year: number; semester: 1 | 2; class_id: number; class_name: string; level: ClassLevel; status: ReviewStatus; has_report: boolean; approved_at: string | null; teachers: string[] | null }>(
@@ -62,21 +63,23 @@ export async function childProfile(id: number): Promise<ChildProfile> {
     joinedOn: c.joined_on,
     guardians: c.guardians ? openJson<Guardian[]>(c.guardians, "children.guardians") : [],
     notes: openText(c.notes, "children.notes"),
+    photoConsent: c.photo_consent,
     semesters,
   };
 }
 
 const tidy = <T extends Record<string, string>>(o: T): T => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.trim()])) as T;
 
-/** Replaces the school's information about a child. Blank guardians are dropped. */
+/** Replaces the school's information about a child, including photo consent. Blank guardians are dropped. */
 export async function updateChildInfo(id: number, info: ChildInfo) {
   if (!(await one("SELECT 1 FROM children WHERE id = $1", [id]))) throw notFound("This child");
   const guardians = info.guardians.map(tidy).filter((g) => g.name || g.phone || g.email);
   const notes = info.notes.trim();
-  await run("UPDATE children SET joined_on = $1, guardians = $2, notes = $3 WHERE id = $4", [
+  await run("UPDATE children SET joined_on = $1, guardians = $2, notes = $3, photo_consent = $4 WHERE id = $5", [
     info.joinedOn,
     guardians.length ? sealJson(guardians, "children.guardians") : "",
     notes ? sealText(notes, "children.notes") : "",
+    info.photoConsent,
     id,
   ]);
 }

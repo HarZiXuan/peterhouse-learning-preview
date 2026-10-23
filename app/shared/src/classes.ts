@@ -1,4 +1,4 @@
-// Class levels (CHANGES-TO-MAKE change 4). A child's level is the age they turn during the calendar year,
+// Class levels (BUILT.md change 4). A child's level is the age they turn during the calendar year,
 // not their exact age today: a child turning 4 in January and one turning 4 in December are both N2.
 
 export const CLASS_LEVELS = [

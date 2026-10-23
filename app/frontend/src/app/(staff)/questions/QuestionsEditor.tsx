@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { TAB, TAB_NAV } from "@/components/ui/tab-styles";
 import {
@@ -145,23 +146,21 @@ function EditQuestion({ q, published, onDone }: { q: DraftQuestion; published: b
           )}
         </p>
         {published && text.trim() !== q.text && (
-          <fieldset className="choice" style={{ border: 0 }}>
-            <legend style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>Is this still the same skill?</legend>
-            <label>
-              <input type="radio" name={`same-${q.key}`} checked={same} onChange={() => setSame(true)} />
-              <span>
-                <b>Same skill, new words</b>
-                <small>Keeps {q.key}, so June and December scores still line up.</small>
-              </span>
-            </label>
-            <label>
-              <input type="radio" name={`same-${q.key}`} checked={!same} onChange={() => setSame(false)} />
-              <span>
-                <b>A different skill</b>
-                <small>Counts as a new question. The next report shows no comparison for it, instead of a misleading one.</small>
-              </span>
-            </label>
-          </fieldset>
+          <RadioGroup value={same ? "same" : "different"} onValueChange={(v) => setSame(v === "same")} aria-label="Is this still the same skill?" className="gap-2">
+            <p className="text-sm font-semibold">Is this still the same skill?</p>
+            {([
+              ["same", "Same skill, new words", `Keeps ${q.key}, so June and December scores still line up.`],
+              ["different", "A different skill", "Counts as a new question. The next report shows no comparison for it, instead of a misleading one."],
+            ] as const).map(([v, title, hint]) => (
+              <label key={v} htmlFor={`same-${q.key}-${v}`} className="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-2.5 rounded-xl bg-card px-3.5 py-3 shadow-[inset_0_0_0_1.5px_var(--line)] has-[[data-state=checked]]:shadow-[inset_0_0_0_2px_var(--ink)]">
+                <RadioGroupItem id={`same-${q.key}-${v}`} value={v} className="mt-1" />
+                <span>
+                  <b className="block text-[14.5px]">{title}</b>
+                  <small className="text-[13px] text-muted-foreground">{hint}</small>
+                </span>
+              </label>
+            ))}
+          </RadioGroup>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="row">

@@ -1,4 +1,4 @@
-import type { SessionUser, UserSummary } from "@peterhouse/shared";
+import { userPhotoUrl, type SessionUser, type UserSummary } from "@peterhouse/shared";
 import type { Request } from "express";
 import { audit } from "../audit";
 import { destroyOtherSessions } from "../auth";
@@ -108,7 +108,9 @@ export async function createUser(
 type SubjectTag = { name: string; color: string };
 
 export async function listUsers(): Promise<UserSummary[]> {
-  const rows = await many<UserRow & { last_login_at: string | null }>("SELECT * FROM users ORDER BY active DESC, name");
+  const rows = await many<UserRow & { last_login_at: string | null; photo_at: string | null }>(
+    "SELECT u.*, p.changed_at AS photo_at FROM users u LEFT JOIN user_photos p ON p.user_id = u.id ORDER BY u.active DESC, u.name",
+  );
   const { termId } = await workspace();
   // This semester's classes, and how many of their children have a written report.
   const classes = await many<{ user_id: number; id: number; name: string; role: "lead" | "co"; written: number; total: number }>(
@@ -148,6 +150,7 @@ export async function listUsers(): Promise<UserSummary[]> {
       role: u.role,
       active: u.active,
       mustChangePassword: u.must_change_password,
+      photo: userPhotoUrl(u.id, u.photo_at),
       lastLoginAt: u.last_login_at,
       lockedUntil: u.locked_until && new Date(u.locked_until) > now ? u.locked_until : null,
       classes: [...mine.map((k) => ({ id: Number(k.id), name: k.name, role: k.role, subjects: subjectsOf(u.id, k.id) })), ...subjectClasses].sort((a, b) => a.name.localeCompare(b.name)),

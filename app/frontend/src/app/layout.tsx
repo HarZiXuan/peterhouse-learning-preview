@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
-import { Caveat, Fredoka, Jost, Noto_Sans_SC, Nunito, Nunito_Sans, Poppins, ZCOOL_KuaiLe } from "next/font/google";
+import { Caveat, Fredoka, Inter, Noto_Sans_SC, Nunito, Poppins, ZCOOL_KuaiLe } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
-// Staff screens use the school's own type: Jost for headings, Nunito Sans for text, Noto Sans SC for Chinese names and comments.
-const jost = Jost({ variable: "--font-jost", subsets: ["latin"], weight: ["500", "600", "700"] });
+// Staff screens use Inter for everything (docs/DESIGN-SYSTEM.md), Noto Sans SC for Chinese names and comments.
+const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 const notoSc = Noto_Sans_SC({ variable: "--font-noto-sc", weight: ["400", "500", "700"], preload: false });
 // The printed family report keeps the Peterhouse print type.
 const poppins = Poppins({ variable: "--font-poppins", subsets: ["latin"], weight: ["400", "500", "600", "700"], preload: false });
-const nunito = Nunito_Sans({ variable: "--font-nunito", subsets: ["latin"], weight: ["300", "400", "600", "700"] });
 // The family report is a keepsake for small children: rounded Fredoka titles, Nunito text, Caveat for the child's own words,
 // and ZCOOL KuaiLe for playful Chinese lettering.
 const fredoka = Fredoka({ variable: "--font-fredoka", subsets: ["latin"], weight: ["500", "600", "700"] });
@@ -24,7 +23,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en-GB" className={`${jost.variable} ${notoSc.variable} ${poppins.variable} ${nunito.variable} ${fredoka.variable} ${nunitoRound.variable} ${caveat.variable} ${zcool.variable}`}>
+    <html lang="en-GB" className={`${inter.variable} ${notoSc.variable} ${poppins.variable} ${fredoka.variable} ${nunitoRound.variable} ${caveat.variable} ${zcool.variable}`}>
       <body>
         {children}
         <Toaster position="bottom-right" />

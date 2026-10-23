@@ -1,4 +1,4 @@
-// The class calendar (CHANGES-TO-MAKE change 5): weekly timetables, events, closures and report deadlines.
+// The class calendar (BUILT.md change 5): weekly timetables, events, closures and report deadlines.
 // The administrator manages it; everyone else sees the entries for their own classes plus the school-wide ones,
 // in the app and through a private calendar link that Google Calendar or Outlook keep up to date.
 import crypto from "node:crypto";

@@ -1,4 +1,4 @@
-// The class calendar (CHANGES-TO-MAKE change 5): who sees which entries, timetables, and the private calendar link.
+// The class calendar (BUILT.md change 5): who sees which entries, timetables, and the private calendar link.
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

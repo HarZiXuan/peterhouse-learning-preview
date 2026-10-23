@@ -76,6 +76,7 @@ export function PeriodPicker({ options }: { options: PeriodOption[] }) {
                   : picked.state === "new"
                   ? `${now ? label(now) : "This semester"} closes and keeps all its reports. Every child gets a new report for ${label(picked)}, with the earlier ratings beside it.${picked.year !== now?.year ? " It is a new year, so every class moves up a level and K2 children are marked as left." : ""}`
                   : `Teachers will write for ${label(picked)}. ${now ? label(now) : "The current semester"} closes and keeps all its reports; nothing is deleted. You can switch back at any time.`)}
+              {picked && " Its reports that are not approved yet can still be finished and approved: pick the semester on Reports."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

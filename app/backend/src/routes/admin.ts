@@ -7,7 +7,7 @@ import { currentUser, requireAdmin } from "../auth";
 import { many } from "../db";
 import { HttpError, idParam, parse } from "../http";
 import { createUser, listUsers, resetPassword, unlockUser, updateUser } from "../domain/users";
-import { approvalExtras, approvalsView, approve, periodsView, requestChanges, takeOver } from "../domain/approval";
+import { approvalExtras, approvalsView, approve, handBack, periodsView, requestChanges, takeOver } from "../domain/approval";
 import { childProfile, updateChildInfo } from "../domain/children";
 import { addChild, classDetail, classesView, createClass, deleteClass, moveChild, setAreaTeacher, setChildLeft, setClassStaff, setSubjectTeacher, updateChild, updateClass } from "../domain/classes";
 import {
@@ -135,7 +135,7 @@ adminRouter.post("/questions/publish", async (req, res) => {
   res.json(await publishQuestions(req, currentUser(req)));
 });
 
-// ─── Classes and children (CHANGES-TO-MAKE change 4) ──────────────────────
+// ─── Classes and children (BUILT.md change 4) ──────────────────────
 
 const Birthday = z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/);
 
@@ -210,6 +210,7 @@ adminRouter.post("/children", async (req, res) => {
       joinedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       guardians: z.array(z.object({ name: z.string().max(100), relationship: z.string().max(40), phone: z.string().max(40), email: z.string().max(200) })).max(6).optional(),
       notes: z.string().max(4000).optional(),
+      photoConsent: z.boolean().optional(),
     }),
     req.body,
   );
@@ -232,6 +233,7 @@ adminRouter.put("/children/:id/info", async (req, res) => {
       joinedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       guardians: z.array(z.object({ name: z.string().max(100), relationship: z.string().max(40), phone: z.string().max(40), email: z.string().max(200) })).max(6),
       notes: z.string().max(4000),
+      photoConsent: z.boolean(),
     }),
     req.body,
   );
@@ -303,5 +305,12 @@ adminRouter.post("/reviews/:id/take-over", async (req, res) => {
   const id = idParam(req.params.id);
   const out = await takeOver(currentUser(req), id);
   await audit(req, currentUser(req).id, "report.taken_over", { reviewId: id, childId: out.childId });
+  res.json({ ok: true });
+});
+
+adminRouter.post("/reviews/:id/hand-back", async (req, res) => {
+  const id = idParam(req.params.id);
+  const out = await handBack(currentUser(req), id);
+  await audit(req, currentUser(req).id, "report.handed_back", { reviewId: id, childId: out.childId });
   res.json({ ok: true });
 });

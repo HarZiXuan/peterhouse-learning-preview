@@ -25,7 +25,7 @@ type Owner = (StaffRef & { source: OwnerSource }) | null;
 const norm = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /** Does a subject ("Chinese 华文", "Maths") teach this learning area (Chinese / 华文, Mathematics / Maths)? */
-function subjectFits(subject: string, area: { name: string; short_name: string; sub_name: string | null }) {
+export function subjectFits(subject: string, area: { name: string; short_name: string; sub_name: string | null }) {
   const words = new Set(norm(subject).split(" "));
   const names = [area.name, area.short_name, area.sub_name].filter((x): x is string => !!x).map(norm);
   return names.some((n) => n === norm(subject) || n.split(" ").every((w) => words.has(w)));

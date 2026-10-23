@@ -8,6 +8,7 @@ import { stageOf } from "@peterhouse/shared";
 import { initials } from "@/components/ui";
 import { Icon, type IconName } from "@/components/icons";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
@@ -256,19 +257,21 @@ export function ClassRail({
             </div>
           )}
           {!collapsed && (
-            <button type="button" onClick={logout} aria-label="Log out" title="Log out" className="grid size-8 place-items-center rounded-md text-muted-foreground outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50">
+            <Button type="button" variant="ghost" size="icon-sm" onClick={logout} aria-label="Log out" title="Log out" className="text-muted-foreground hover:bg-sidebar-accent hover:text-foreground">
               <Icon name="logout" size={17} />
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon-sm"
             onClick={() => setCollapsed(!collapsed)}
             aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"}
             title={collapsed ? "Expand the sidebar" : "Collapse the sidebar"}
-            className="grid size-8 place-items-center rounded-md border text-muted-foreground outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="bg-transparent text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
           >
             <Icon name={collapsed ? "right" : "left"} size={16} stroke={2.2} />
-          </button>
+          </Button>
         </div>
       </aside>
 
