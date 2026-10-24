@@ -187,7 +187,9 @@ export type SaveResult =
   | { ok: false; conflict: { by: string; at: string; answer: AreaAnswer } }
   | { ok: false; error: string };
 
-export type WriteOutcome = { ok: true; provider: string; fellBack: string | null } | { ok: false; error: string };
+export type WriteOutcome =
+  | { ok: true; provider: string; fellBack: string | null }
+  | { ok: false; error: string; gap?: { areaKey: string; skillKey: string } };
 
 export type ReviewPhoto = { id: number; areaKey: string | null };
 

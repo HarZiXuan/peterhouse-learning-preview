@@ -27,23 +27,64 @@ function Stars({ level, size }: { level: number; size?: number }) {
 }
 
 /** The area as one ring: how full it is follows the average of the teacher's ratings, out of five. */
-function ScoreRing({ levels, name }: { levels: number[]; name: string }) {
+function ScoreRing({ levels, name, small }: { levels: number[]; name: string; small?: boolean }) {
   const seen = levels.filter((l) => l > 0);
   if (!seen.length) return <p className={styles.notYet}>Still getting to know {name}</p>;
   const avg = seen.reduce((a, b) => a + b, 0) / seen.length;
   const R = 92;
   const C = 2 * Math.PI * R;
   return (
-    <div className={styles.ring}>
+    <div className={`${styles.ring} ${small ? styles.ringSmall : ""}`}>
       <svg viewBox="0 0 220 220" aria-hidden>
         <circle cx="110" cy="110" r={R} className={styles.ringTrack} />
         <circle cx="110" cy="110" r={R} className={styles.ringFill} strokeDasharray={`${(avg / 5) * C} ${C}`} transform="rotate(-90 110 110)" />
       </svg>
       <div className={styles.ringText}>
-        <Stars level={Math.round(avg)} size={18} />
+        <Stars level={Math.round(avg)} size={small ? 12 : 18} />
         <strong>{levelWord(Math.round(avg) as Level)}</strong>
       </div>
     </div>
+  );
+}
+
+/** One rating in the comparison: stars and its word, or a dash when the skill was not asked that semester. */
+function Rated({ level }: { level: Level | null }) {
+  if (level === null) return <span className={styles.notAsked}>–</span>;
+  return (
+    <>
+      {level > 0 && <Stars level={level} size={10} />}
+      <span className={styles.ratedWord}>{levelWord(level)}</span>
+    </>
+  );
+}
+
+/** The second semester beside the first: each statement with both ratings, lined up by the question's permanent key. */
+function Compare({ skills, before, now }: { skills: ReportData["areas"][number]["skills"]; before: string; now: string }) {
+  return (
+    <table className={styles.compare}>
+      <thead>
+        <tr>
+          <th />
+          <th scope="col">{before}</th>
+          <th scope="col">{now}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {skills.map((s) => (
+          <tr key={s.key}>
+            <th scope="row">{s.text}</th>
+            <td>
+              <Rated level={s.previous} />
+            </td>
+            <td>
+              <Rated level={s.level} />
+              {s.previous !== null && s.previous > 0 && s.level > s.previous && <span className={styles.upMark} aria-label={`up since ${before}`}>↑</span>}
+              {s.previous !== null && s.level > 0 && s.level < s.previous && <span className={styles.downMark} aria-label={`down since ${before}`}>↓</span>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -275,7 +316,14 @@ export function Report({
               </div>
               <section className={styles.skillsBox} aria-label={`How ${data.firstName} is doing in ${a.name}`}>
                 <h2>{a.language === "zh" ? `${data.firstName}的${a.subName ?? a.name}` : `${data.firstName} in ${a.name}`}</h2>
-                <ScoreRing levels={a.skills.map((s) => s.level)} name={data.firstName} />
+                {data.previousSeason && a.skills.some((s) => s.previous !== null) ? (
+                  <>
+                    <ScoreRing levels={a.skills.map((s) => s.level)} name={data.firstName} small />
+                    <Compare skills={a.skills} before={data.previousSeason} now={data.season} />
+                  </>
+                ) : (
+                  <ScoreRing levels={a.skills.map((s) => s.level)} name={data.firstName} />
+                )}
               </section>
             </div>
 

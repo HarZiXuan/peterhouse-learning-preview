@@ -61,7 +61,7 @@ export function CalendarLinkCard({ path: initial, admin }: { path: string; admin
         </Button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Input readOnly value={url} aria-label="Your calendar link" className="h-8 max-w-xl flex-1 font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
+        <Input readOnly value={url} aria-label="Your calendar link" className="h-8 max-w-xl flex-1 text-xs" onFocus={(e) => e.currentTarget.select()} />
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="ghost" size="sm" className="text-muted-foreground">

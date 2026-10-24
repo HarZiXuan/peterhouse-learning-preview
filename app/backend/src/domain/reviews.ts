@@ -495,12 +495,32 @@ function toParagraphs(r: ReviewRow, rubric: Rubric, answers: Record<string, Area
 /** Writes (or rewrites) the whole draft. The previous version is always kept. */
 export async function writeDraft(user: SessionUser, id: number, opts: { provider?: "sentence_bank" } = {}): Promise<WriteOutcome> {
   const r = await getReviewForEdit(user, id);
-  if (r.status !== "ready" && r.status !== "written" && r.status !== "changes_requested") {
-    return { ok: false, error: "This review is not ready yet. Finish the readiness check first." };
+  const { answers: stored } = await loadAnswers(r.id, r.rubric);
+  // A missing rating leaves the review as Draft, so say which statement is blank instead of a status name.
+  const gaps = readinessGaps(r.rubric, stored);
+  if (gaps.length) {
+    let gap: { areaKey: string; skillKey: string } | undefined;
+    let sentence = "";
+    let areaName = "";
+    for (const a of r.rubric.areas) {
+      const skill = a.skills.find((s) => !stored[a.key]?.skills[s.key]?.touched);
+      if (!skill) continue;
+      gap = { areaKey: a.key, skillKey: skill.key };
+      areaName = a.shortName;
+      sentence = fillTemplate(skill.text, r.preferred_name, r.pronoun);
+      break;
+    }
+    const more = gaps.length > 1 ? ` ${gaps.length} areas still have something to rate.` : "";
+    return {
+      ok: false,
+      error: gap
+        ? `${areaName} still has a statement to rate: “${sentence}” Rate it, or mark it Not seen yet.${more}`
+        : "Some statements are not rated yet. Rate each one, or mark it Not seen yet, first.",
+      ...(gap ? { gap } : {}),
+    };
   }
-  // A rating cleared after the report was written leaves the review short again.
-  if (readinessGaps(r.rubric, (await loadAnswers(r.id, r.rubric)).answers).length) {
-    return { ok: false, error: "Some statements are not rated yet. Rate each one, or mark it Not seen yet, first." };
+  if (r.status !== "ready" && r.status !== "written" && r.status !== "changes_requested" && r.status !== "draft") {
+    return { ok: false, error: "This review is not ready yet. Finish the readiness check first." };
   }
   // The lead writes the report once every other teacher has sent their part.
   const waiting = await waitingParts(r, r.rubric.areas, user.role === "admin" ? null : user.id);

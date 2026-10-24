@@ -381,7 +381,7 @@ export function People({ initial, meId, teachersOnly = false }: { initial: UserS
       </div>
 
       <Card className="gap-0 overflow-hidden py-0 shadow-none">
-        <DataTable columns={columns} data={shown} getRowId={(u) => u.id} initialSort={[{ id: "name", desc: false }]} rowClassName={(u) => !u.active && "text-muted-foreground"} empty="No one matches. Try a different name or clear the filter." />
+        <DataTable columns={columns} data={shown} getRowId={(u) => u.id} initialSort={[{ id: "name", desc: false }]} rowClassName={(u) => !u.active && "text-muted-foreground"} pageSize={teachersOnly ? 50 : undefined} empty="No one matches. Try a different name or clear the filter." />
       </Card>
 
       {dialog?.kind === "edit" && (

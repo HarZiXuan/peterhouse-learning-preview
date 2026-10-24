@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/phone-input";
+import { guardiansPhoneProblem } from "@/lib/phone";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
@@ -101,6 +103,8 @@ export function AddChild({
     if (!level) return setError("This child does not fit any level this year.");
     if (ofLevel.length === 0) return setError(`There is no ${level} class yet. Create one on the Classes page first.`);
     if (!chosen) return setError("Please choose which class this child joins.");
+    const badPhone = guardiansPhoneProblem(guardians);
+    if (badPhone) return setError(badPhone);
     setBusy(true);
     const res = await fetch("/api/admin/children", {
       method: "POST",
@@ -259,7 +263,7 @@ export function AddChild({
                   </Button>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <Input aria-label="Phone" placeholder="Phone" type="tel" value={g.phone} onChange={(e) => setGuardian(i, { phone: e.target.value })} maxLength={40} />
+                  <PhoneInput label={`Phone of ${g.name || "this person"}`} value={g.phone} onChange={(phone) => setGuardian(i, { phone })} />
                   <Input aria-label="Email" placeholder="Email" type="email" value={g.email} onChange={(e) => setGuardian(i, { email: e.target.value })} maxLength={200} />
                 </div>
               </div>

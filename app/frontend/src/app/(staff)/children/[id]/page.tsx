@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SectionCard, StatStrip } from "@/components/admin";
 import { ChildAvatar, initials } from "@/components/ui";
 import type { IconName } from "@/components/icons";
+import { displayPhone } from "@/lib/phone";
 import { EditInfo, ProfileActions, SemestersTable } from "./Profile";
 
 export const dynamic = "force-dynamic";
@@ -107,7 +108,7 @@ export default async function ChildProfilePage({ params }: { params: Promise<{ i
                       </p>
                       {g.phone && (
                         <a href={`tel:${g.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-2 text-foreground hover:text-foreground hover:underline">
-                          <Phone className="size-3.5 text-muted-foreground" aria-hidden /> {g.phone}
+                          <Phone className="size-3.5 text-muted-foreground" aria-hidden /> {displayPhone(g.phone)}
                         </a>
                       )}
                       {g.email && (

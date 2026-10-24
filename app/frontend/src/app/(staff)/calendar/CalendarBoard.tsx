@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { CalendarEvent, CalendarView, ClassLevel } from "@peterhouse/shared";
 import { CLASS_LEVELS } from "@peterhouse/shared";
+import { PageTitle } from "@/components/admin";
 import { Icon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -151,7 +152,7 @@ function DayHours({
                 SUBJECT_TINT[s?.color ?? "stone"],
               )}
             >
-              <span className="font-mono">{time(l.start)}</span>{" "}
+              <span className="tabular-nums">{time(l.start)}</span>{" "}
               <span className="font-semibold">{s?.name}</span>
             </li>
           );
@@ -242,7 +243,7 @@ function DayHours({
                   sideOffset={6}
                   className="border bg-popover p-3 text-popover-foreground shadow-md [&>svg]:hidden"
                 >
-                  <p className="mb-1.5 font-heading text-sm font-bold">
+                  <p className="mb-1.5 text-sm font-semibold">
                     {name} · {longDay(iso)}
                   </p>
                   <ul className="grid gap-1">
@@ -262,7 +263,7 @@ function DayHours({
                             )}
                             aria-hidden
                           />
-                          <span className="w-24 shrink-0 font-mono tabular-nums">
+                          <span className="w-24 shrink-0 tabular-nums">
                             {time(l.start)}–{time(l.end)}
                           </span>
                           <span className="font-semibold">{sub?.name}</span>
@@ -424,7 +425,7 @@ function Week({
                                 <span className="block font-semibold">
                                   {sub?.name}
                                 </span>
-                                <span className="block font-mono tabular-nums opacity-80">
+                                <span className="block tabular-nums opacity-80">
                                   {time(l.start)}–{time(l.end)}
                                   {l.room && ` · ${l.room}`}
                                 </span>
@@ -740,10 +741,7 @@ export function CalendarBoard({
                 ? "You manage it; staff see their own classes"
                 : "Your lessons, your classes’ events and the whole school’s"}
           </p>
-          <h1 className="flex items-center gap-3 font-heading text-3xl font-bold tracking-tight md:text-4xl">
-            <Icon name={editingTimetable ? "timetable" : "calendar"} size={30} />
-            {editingTimetable ? (admin ? "Edit timetable" : "My timetable") : admin ? "Calendar" : "My calendar"}
-          </h1>
+          <PageTitle icon={editingTimetable ? "timetable" : "calendar"}>{editingTimetable ? (admin ? "Edit timetable" : "My timetable") : admin ? "Calendar" : "My calendar"}</PageTitle>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {mode !== "timetable" && levels.length > 1 && (

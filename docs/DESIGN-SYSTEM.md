@@ -13,6 +13,9 @@ child profile (`children/[id]`), the Children and Teachers lists. Copy their pat
 
 - Build from `@/components/ui/*` (shadcn, new-york style, Radix). Add a missing one with `npx shadcn@latest add <name>`
   from `app/frontend`, never hand-roll a look-alike.
+- Phone numbers always use `PhoneInput` (`@/components/phone-input`): a country code picker (Singapore first) and the
+  number spaced as it is typed, stored as `+65 9123 4567`. Forms refuse to save a number of the wrong length
+  (`guardiansPhoneProblem`), and pages show stored numbers with `displayPhone`.
 - Choices: `Select` for one of a short list, `Popover` with a button list for a richer picker (a person with a line
   of detail), `Checkbox` for many-of, `RadioGroup` for one-of with descriptions, `Tabs` (`variant="line"`) for sections
   of one page.

@@ -141,6 +141,21 @@
 .ringText strong { font-family: var(--f-title); font-size: 24px; font-weight: 600; color: var(--deep); }
 .skillsBox h2 { margin: 0 0 2px; font-family: var(--f-title); font-size: 24px; font-weight: 600; color: var(--deep); }
 .stars { display: flex; gap: 2px; }
+.ringSmall { width: 132px; height: 132px; margin-top: 6px; flex: none; }
+.ringSmall svg circle { stroke-width: 26; }
+.ringSmall .ringText { gap: 3px; }
+.ringSmall .ringText strong { font-size: 14px; }
+.compare { width: 100%; margin-top: 10px; border-collapse: collapse; text-align: left; font-size: 12px; line-height: 1.25; color: var(--navy); }
+.compare thead th { padding: 0 4px 4px; font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--deep); border-bottom: 2px solid var(--mid); }
+.compare tbody th { padding: 5px 8px 5px 0; font-weight: 700; vertical-align: top; overflow-wrap: anywhere; }
+.compare td { width: 98px; padding: 5px 4px; vertical-align: top; }
+.compare tbody tr + tr > * { border-top: 1px dashed #e6dcc5; }
+.compare td .stars { margin-bottom: 2px; }
+.ratedWord { font-weight: 600; }
+.notAsked { color: var(--muted); }
+.upMark, .downMark { margin-left: 4px; font-weight: 800; }
+.upMark { color: #1e8e3e; }
+.downMark { color: var(--red); }
 .notYet { font-size: 12.5px; font-weight: 700; color: var(--muted); }
 
 .note { margin: 22px 56px 0; flex: 1 1 auto; min-height: 0; padding: 16px 26px 22px; border-radius: 30px; background: #fff; border: 3px solid var(--mid); overflow: hidden; }

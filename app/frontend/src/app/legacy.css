@@ -168,10 +168,10 @@ textarea.input, .ta { resize: vertical; min-height: 64px; }
 .homepick[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); font-weight: 600; }
 .homepick[aria-pressed="true"] i { background: var(--ink); box-shadow: none; color: var(--sun); }
 .homepick:disabled { opacity: 0.45; cursor: not-allowed; }
-.extras { padding-top: 22px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; align-items: start; }
+.extras { padding-top: 22px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(11rem, 15rem); gap: 20px; align-items: start; }
 .extras-note { display: grid; gap: 6px; min-width: 0; }
 .extras-note .spread label { font-weight: 600; font-size: 15px; }
-.photos { display: grid; gap: 6px; }
+.photos { display: grid; gap: 6px; min-width: 0; }
 .photos-row { display: flex; gap: 8px; }
 .ph { position: relative; width: 72px; height: 72px; border-radius: 12px; overflow: hidden; background: var(--rung); }
 .ph img { width: 100%; height: 100%; object-fit: cover; }

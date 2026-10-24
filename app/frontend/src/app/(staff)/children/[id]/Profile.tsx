@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/phone-input";
+import { guardiansPhoneProblem } from "@/lib/phone";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PROFILE_DIALOG, ProfileForm, ProfilePhoto } from "@/components/ProfileForm";
@@ -83,6 +85,8 @@ export function EditInfo({ child }: { child: ChildProfile }) {
             busy={busy}
             onSubmit={async (e) => {
               e.preventDefault();
+              const badPhone = guardiansPhoneProblem(guardians);
+              if (badPhone) return void toast.error(badPhone);
               setBusy(true);
               const err = await adminSend("PUT", `/children/${child.id}/info`, { joinedOn, guardians, notes, photoConsent });
               setBusy(false);
@@ -115,7 +119,7 @@ export function EditInfo({ child }: { child: ChildProfile }) {
                       <X />
                     </Button>
                   </div>
-                  <Input aria-label="Phone" placeholder="Phone" type="tel" value={g.phone} onChange={(e) => setGuardian(i, { phone: e.target.value })} maxLength={40} />
+                  <PhoneInput label={`Phone of ${g.name || "this person"}`} value={g.phone} onChange={(phone) => setGuardian(i, { phone })} />
                   <Input aria-label="Email" placeholder="Email" type="email" value={g.email} onChange={(e) => setGuardian(i, { email: e.target.value })} maxLength={200} />
                 </div>
               ))}

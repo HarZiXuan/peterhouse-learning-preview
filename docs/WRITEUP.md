@@ -1,97 +1,157 @@
 # Peterhouse Learning Review: write-up
 
-## 1. Tech stack
+The Learning Review helps teachers write each child's end-of-semester portfolio. A teacher rates a few short statements about the child in each learning area (for example "Mia counts objects to 10": *Sometimes*, *Regularly*, *Confidently*…), adds a short note, and chooses photos. The system turns that into a warm, written report in the school's style, which the teacher checks, the administrator approves, and the family receives as a printed or PDF keepsake.
 
-| Layer | What | Why |
+This write-up explains what it is built with, how a child's progress is kept from one semester to the next, where the data will live and how it is protected, and the future enhancements we plan.
+
+---
+
+## 1. What it is built with
+
+| Part | What we use | Why |
 | --- | --- | --- |
-| **Frontend** | Next.js 15 (React 19), TypeScript, plain CSS (global styles + CSS modules, no UI library). Fonts are self-hosted through `next/font`. | Server-rendered pages load fast on a school tablet, and the same React report component is used for the on-screen preview *and* the PDF, so they cannot drift apart. The frontend has no database connection and holds no secrets: it only calls the backend. |
-| **Backend** | Node 22, Express 5, TypeScript. `zod` validates every input, `helmet` sets headers, `express-rate-limit` slows guessing. | A small, well-understood API that is the single place where login, access control, encryption, AI calls and PDF generation happen. Types are shared with the frontend (`app/shared/`), so the two sides cannot disagree about a shape. |
-| **Database** | PostgreSQL 17 in Docker on a private network (not reachable from the internet). Schema is plain SQL in `app/backend/db/migrations`, applied in order and checksummed. | One real database with transactions and constraints (one review per child per term, valid statuses, foreign keys). Migrations make every server and every developer end up with the same schema. |
-| **Ratings, comments, narratives** | `review_areas` (ratings, one comment, and for Self-Enrichment the "loved most" answer and home-idea picks, per area), `reviews` (written report). | Personal text is **encrypted by the backend** before it reaches Postgres (see section 3). |
-| **Photos** | Re-encoded (upright, max 1600 px, location/camera data stripped), then **encrypted and stored in Postgres** (`review_photos.data`). | One backup contains everything, and there is no loose folder of photos on the server to forget about or leave unprotected. |
-| **AI** | Google Gemini (`gemini-3.5-flash`) by default; OpenAI or a model on the school's own machine (Ollama) are options; the built-in sentence bank is the offline fallback. | The writer is chosen by the server's environment only. If the service fails, the sentence bank writes the report instead and the teacher is told. |
-| **PDF** | Headless Chromium (`puppeteer-core`) prints the frontend's A4 report page. | Real brand fonts and layout, exactly what was previewed. The backend signs the print browser in with a two-minute session that is deleted straight after. |
-| **Login / access** | Per-person accounts, `scrypt` password hashes, server-side sessions in an HttpOnly cookie, roles (admin, teacher), class-based access, activity log. | Details below. |
+| **The screens teachers use** | **Next.js** (a widely used website framework), with **Tailwind** for styling and **shadcn** for ready-made buttons, tables and forms, in the **Inter** font. The family report uses the Peterhouse fonts and colours. | Pages open quickly on a school tablet or laptop. The report a teacher previews on screen is drawn by exactly the same page that makes the PDF, so what they check is what the family gets. |
+| **The engine behind the screens** | **Node.js** with **Express**, written in **TypeScript**. | One small, well-known engine does all the sensitive work in one place: checking who is logged in, deciding who may see what, locking and unlocking data, talking to the AI and making PDFs. |
+| **Where ratings, comments and reports are kept** | **PostgreSQL**, a reliable, free database used by banks and governments. | One child, one report per semester, never two. Nothing is overwritten by accident. |
+| **Where photos are kept** | Inside the same database, **locked** (encrypted) like everything else. Before saving, each photo is turned upright, made smaller, and stripped of hidden details such as where and when it was taken. | One backup holds everything, and there is no folder of children's photos lying around on the server. Photos are only accepted when the family has given consent. |
+| **The writing assistant (AI)** | **Google Gemini** today. It can be switched to OpenAI, or to a model running on the school's own computer. If the AI is unavailable, a built-in "sentence bank" writes the report instead. | Teachers always get a report, even when the internet or the AI service is down. |
+| **PDF reports** | The system opens the report page in a hidden browser (Chrome) and "prints" it to an A4 PDF. Chinese fonts are installed on the server itself. | The PDF looks exactly like the preview, and Chinese names and paragraphs always show correctly, even on a brand-new server. |
+| **Logging in** | Every staff member has their own account and password, and a role: **Administrator** or **Teacher** (see below). | Everyone is responsible for their own actions, and a teacher can never open a child from another class. |
 
-**How the AI drafts in the school's style without inventing details**
+### Logging in, roles and who can do what
 
-- *Style:* the system prompt is `app/backend/skills/report-writing/SKILL.md`: voice (warm, plain, British spelling, short sentences), structure (70–100 words per paragraph), how to speak at each level, bold keywords, and worked examples. It is a plain file the school can edit without touching code.
-- *No invention:* the model only receives the teacher's own facts: each statement with its 1–5 score or "not seen yet", the name-scrubbed comment per area, what the child loved most and the home ideas the teacher picked (Teacher Questions v0.3, section 5). 4–5 are written as strengths, 1–2 gently, and "not seen yet" is never described as a weakness. The prompt says "never invent an event, place, object or person; write fewer sentences rather than guess". Families never see the numbers. Output is requested as strict JSON; a bad reply is retried once, then the sentence bank is used.
-- *Checking afterwards:* every paragraph is checked in code and flagged for the teacher if it contains a number or score, a banned word ("behind", "weak", …), a comparison with other children, a skill that was not observed, another child's or a teacher's name, a left-over placeholder, or is too short or long. Flags are shown next to the text; nothing is silently rewritten.
-- *Teacher in control:* the teacher can edit any paragraph or rewrite just one (shorter / warmer / simpler). Changing an answer after the report is written marks that paragraph "stale" instead of rewriting it.
-- *Privacy:* the AI never learns who the child is. `anonymise.ts` is the only way answers reach it: it receives the answers and the roster, never the child record, and replaces the child with `[Child]`, siblings with `[Friend]`, staff with `[Teacher]`, and strips phone numbers, emails and NRIC numbers from free text. The name is put back on the school's side. "What was sent?" shows the exact text. `app/backend/tests/anonymise.test.ts` runs the real pipeline against a stubbed AI service and fails if any identifying text would leave.
+There are no shared passwords. The administrator creates each staff member's account; the new person receives a temporary password and must choose their own the first time they log in.
 
-**Chinese in the PDF.** The report page's font stack falls back to Noto Sans SC / PingFang SC, and the backend container installs `fonts-noto-cjk` and `fonts-noto-color-emoji`, so Chromium always has a Chinese font even on a bare server. I rendered a PDF for a child called 陈小明 and checked the name, cover initial and body text visually. The cover initial uses the first Unicode character rather than the first byte.
+**Administrator** (for example, the principal or school manager) runs the school's side of the system:
 
-**Login and access control**
-- Each person has their own account; there is no shared password. New accounts get a temporary password and *must* choose their own at first sign-in.
-- Passwords: `scrypt` (memory-hard), at least 10 characters. Unknown email and wrong password give the same message and take the same time.
-- Five wrong passwords lock the account for 15 minutes; sign-in is also rate-limited per IP address.
-- Sessions: a random token in an `HttpOnly`, `SameSite=Lax`, `Secure` cookie. The database stores only its SHA-256. Sessions end after 12 hours idle or 7 days total; deactivating someone or resetting their password signs them out immediately.
-- Roles: *teachers* see only the classes they belong to (a child in another class looks like it does not exist); *administrators* see every class and manage people, settings and the activity log.
-- Every state-changing request is checked for a matching site origin (cross-site request protection) on top of `SameSite`.
-- The activity log records sign-ins (and failures), opening a child's record, writing/editing/downloading a report, photo changes and account changes. It never contains a child's name.
+- **Controls staff accounts:** adds new teachers, edits their name, email and role, resets a forgotten password, unlocks an account after too many wrong passwords, and switches off the account of someone who has left, which logs them out everywhere at once.
+- **Sets up classes:** creates classes, adds children, and chooses each class's teachers and who writes each learning area.
+- **Approves every report:** reads each report as the family will see it, then approves it, sends it back with a note, or takes it over to finish it (for example, when a teacher is away).
+- **Runs the school year:** edits the questions teachers answer, keeps the calendar and timetables, and starts the next semester.
+- **Sees the activity record:** who logged in, who opened which child's record, and who wrote, approved or downloaded a report.
 
-## 2. Storing progress across semesters
+**Teacher** writes the reports for their own class, and sees nothing else. Within a class, a teacher can be:
 
-A **term** is one portfolio period: `terms(year, semester)` where semester 1 is January–June and semester 2 is July–December (unique per year+semester). Each term has its own class(es).
+- **Lead teacher:** writes the whole report for each child and sends it to the administrator. They can change any part of it.
+- **Co-teacher or subject teacher:** writes only the learning areas given to them (for example, the Chinese teacher writes the Chinese area), and sends that part to the lead teacher.
 
-A child exists once (`children`) and has **one review per term** (`reviews`, unique on `(child_id, term_id)`). Everything for that semester hangs off the review:
+*Example:* Ms Lim is lead teacher of K1 Sunflower and Mr Tan teaches Chinese there. Mr Tan rates the Chinese skills for each child, checks the Chinese paragraph and sends it to Ms Lim. Ms Lim writes the rest of the report around it and sends it to the principal. The principal approves it, and only then can the family's PDF be downloaded. Neither teacher can open a child from K2 Rainbow.
 
-```
-children ─┬─ reviews (child, term, class, status, written report, frozen question set + rubric_version_id)
-          │     ├─ review_areas   one row per area: ratings (1–5 or not seen, per question key), comment, loved-most, home picks
-          │     ├─ review_photos  encrypted photos, up to three per area
-          │     └─ draft_versions earlier versions of the written report
-terms ────┘
-domains ── questions (permanent key, wording, order, active/retired)   ← the administrator's draft
-rubric_versions (version, frozen snapshot)                              ← what "Publish" creates
-```
+**Extra protection on logging in:** five wrong passwords lock an account for 15 minutes, and anyone inactive for 12 hours is logged out automatically.
 
-- **Ratings are never overwritten between semesters.** "Start next semester" (administrator only, one click) closes the current term and creates a *new, blank review* in the new term for every child still enrolled, carrying the class and its teachers forward. Reports keep their status: approval stays the administrator's decision. A report the old semester closed on before approval can still be finished, sent and approved afterwards, so no family misses theirs.
-- **An approved report is frozen.** On approval the report's pages, the school details and the date are stored with it (`reviews.approved_snapshot`), and the child's profile photo is copied in as the report's own cover. The PDF prints from that copy, so later changes to names, photos, class teachers or settings never change what a family was given. Sending it back clears the copy.
-- **Semester 2 shows Semester 1.** When the report for semester 2 is built, the backend finds the child's most recent earlier written review at the same level and attaches each skill's previous rating; the report prints "Semester 1: Growing" under the new rating. Skills that were not observed before, or did not exist, simply show nothing. (A test covers this: Semester 1 data is byte-for-byte unchanged after rollover, and the Semester 2 report carries the right previous ratings.)
-- **Question wording is frozen per review.** The administrator edits a draft (`domains`, `questions`) and publishes it as a new `rubric_versions` row. A review copies the latest version the first time it is opened (`reviews.rubric`, `reviews.rubric_version_id`) and keeps it, so later edits never change a past or in-progress report.
-- **Question keys are permanent.** Rewording keeps the key, so Semester 1 and Semester 2 scores still line up; replacing a question with a different skill retires it and creates a new key, so the next report shows no comparison instead of a misleading one. Retired questions stay in history. Each domain keeps 3–6 questions, and every change is in the activity log.
-- Comments and narratives are per review, so each semester keeps its own written report, with the earlier drafts in `draft_versions`.
+### How the AI writes in our style without making things up
 
-## 3. Hosting and security
+Think of the AI as a new teaching assistant who writes well but has never met the child. We give them a style guide and only the teacher's own facts, and the teacher always has the final word.
 
-**Today:** the prototype runs on a shared test server (RackNerd, 1 vCPU, 1.9 GB RAM, alongside other projects). That is fine for trying it with made-up children, not for real ones. Before real children's data goes in, it moves to the server below.
+- **A style guide in plain English.** It describes the school's voice (warm, simple, British spelling, short sentences), how long each paragraph should be, how to talk about each rating, and shows good examples. The school can edit it at any time, with no programming.
+- **Only the teacher's facts go in.** The AI sees the ratings, the teacher's short notes, what the child loved most, and the home ideas the teacher picked. Nothing else.
+- **Told never to invent.** It is told never to make up an event, place, object or person, and to write less rather than guess. Strong ratings are written as strengths; low ones are written gently; "not seen yet" is never written as a weakness. Families never see numbers.
+  *Example:* if the teacher rated "builds towers with blocks" as *Really shines* but wrote no note, the report may say Mia builds tall towers with care. It will not say "Mia built a castle with her friend Sarah last Tuesday".
+- **Checked before the teacher sees it.** Every paragraph is checked automatically, and anything doubtful is highlighted for the teacher: a score or number, words such as "weak" or "behind", a comparison with other children, another child's name, or a skill that was never observed.
+- **The teacher decides.** The teacher can edit any sentence, or ask for one paragraph again ("make it shorter", "mention her painting"). Nothing reaches a family until the administrator approves it.
+- **Chinese in Chinese.** The Chinese (华文) area is asked and written in Chinese.
+- **Shared reports.** When a Chinese teacher looks after the Chinese area, they write and check that part and send it to the class's lead teacher. The lead teacher's report keeps that part exactly as the Chinese teacher sent it.
 
-**Where (for real data):** a dedicated VPS in **Singapore** (2 vCPU, 4 GB RAM, Ubuntu 24.04 LTS, ~US$12–25/month; DigitalOcean, Hetzner or Hostinger all have Singapore regions). Singapore keeps the children's data in the school's country, which makes the PDPA conversation straightforward and gives teachers low latency. It is a separate machine from anything else I run, so a problem elsewhere cannot touch it. 4 GB is the realistic minimum: Postgres, the API, the frontend and a headless browser for PDFs all fit, whereas 2 GB would swap whenever a class's PDFs are printed.
+---
 
-**Server setup** (`infra/server/harden.sh`, idempotent, written for a fresh Ubuntu 24.04 VPS)
-- Non-root `deploy` user, SSH keys only, no root login, no passwords, modern ciphers, `AllowUsers deploy`.
-- **Firewall:** default-deny. Only 80 and 443 are open to the internet. **SSH is reachable only over Tailscale** (a private network): a two-phase script keeps public SSH open until the Tailscale login is confirmed, so you cannot lock yourself out, then closes it. The provider's own cloud firewall is set to the same rules as a second layer.
-- `fail2ban`, automatic security updates with a reboot window, kernel network hardening (`sysctl`), persistent logs, `auditd` watching SSH/sudo/secret files.
-- Everything runs in Docker with `cap_drop: ALL`, `no-new-privileges`, read-only filesystems and memory limits. **Postgres has no published port and sits on an internal network with no internet route.** The backend and frontend are published only on `127.0.0.1`; nginx is the only way in.
-- nginx terminates TLS 1.2/1.3 (Let's Encrypt, auto-renewed), redirects HTTP→HTTPS, sends HSTS, a Content-Security-Policy and other security headers, rate-limits `/api/auth/login` more strictly than the rest, and hides its version.
+## 2. Keeping each child's progress across the year
 
-**Encryption**
-- **In transit:** HTTPS everywhere to the browser; the AI call is HTTPS; backend ↔ Postgres stays on the server's private Docker network.
-- **At rest, in the application:** child names, birthdays, highlights, notes, comments, written reports and photos are encrypted with **AES-256-GCM by the backend before they reach Postgres**. Each value has its own random nonce and is bound to its column (a value copied elsewhere will not decrypt); tampering is detected. The key is **not in the database** (`DATA_ENCRYPTION_KEYS` in the server's environment), so a stolen database file, dump or backup is unreadable without it. This also protects against the VPS provider reading the disk, which full-disk encryption on a VPS does not. Keys support rotation (a new key encrypts, old keys still decrypt). Ratings stay as plain numbers inside their encrypted JSON, so nothing is searchable in the clear.
-- Passwords are `scrypt` hashes; session tokens are stored only as hashes.
-- Tested: `app/backend/tests/flow.test.ts` writes a child, notes, ratings and a photo, then dumps every table and fails if any name, birthday, note or report text appears in the clear.
+Portfolios are done twice a year: **Semester 1** (January to June) and **Semester 2** (July to December).
 
-**Backups** (`infra/server/backup.sh` + systemd timer)
-- Daily at 02:30 Singapore time: `pg_dump` → encrypted with `age` to a **public key** (the private key never lives on the server) → kept 14 days locally → copied **off-site** to a bucket at a different provider with `rclone`. One dump contains everything, photos included.
-- `restore.sh` restores into a scratch database first and prints row counts next to the live ones; the runbook includes a restore drill to repeat after any change.
-- The encryption keys are backed up **separately** (password manager + offline copy): backups without `DATA_ENCRYPTION_KEYS` cannot be read.
+**How it is kept.** Each child has one record. Each semester, that child gets a new, separate report: their ratings, the teacher's notes, the photos, the written report and every earlier draft of it. Starting a new semester never touches the old one. It is like a new page in the same exercise book: the old pages stay as they were.
 
-**Access control and deployment**
-- Per-person accounts and roles as in section 1; admin-only pages for people and the activity log.
-- CI (GitHub Actions) runs typecheck, tests against a real Postgres, lint and builds both images. Deploys are a manual workflow that builds and pushes images, joins the server's Tailscale network with an ephemeral key, and runs `docker compose pull && up -d`. There are no secrets in the repository; migrations run when the backend starts.
+**What the family sees in Semester 2.** On each learning area page, every statement is listed with the June rating beside the December rating, with a green ↑ where the child has grown and a red ↓ where they have slipped.
 
-**Honest status:** the code, tests and the local stack are working and verified on my machine. The Docker images, `harden.sh`, the GitHub workflows and the backup timer have been reviewed and partly exercised (compose config, nginx syntax, backup/restore against a local Postgres) but have **not yet been run on a real VPS**; the first deployment is where I would expect to fix small things. Not yet built: two-step sign-in, PDF password protection, bulk re-encryption after a key rotation.
+> **Mia in Mathematics**
+>
+> | | June | December |
+> | --- | --- | --- |
+> | Mia counts objects to 10 | ★★☆☆☆ Sometimes | ★★★★☆ Confidently ↑ |
+> | Mia names simple shapes | ★★★☆☆ Regularly | ★★★☆☆ Regularly |
+> | Mia sorts things by colour | ★★★★☆ Confidently | ★★★☆☆ Regularly ↓ |
 
-## 4. Future features
+**Why the comparison stays fair:**
 
-1. **Two-step sign-in (TOTP)** for administrators, then everyone; account lock-out alerts by email.
-2. **Family delivery:** a secure, expiring download link or a parent portal instead of emailing PDFs; optional password-protected PDFs; parent acknowledgement.
-3. **Bilingual reports:** Chinese narrative alongside English (with the same anonymisation and quality checks), plus per-family language choice.
-4. **Pre-filling a new semester** from the last one ("copy from last semester", suggested next steps from last time's goals) and a progress-over-time view per child (Nursery → K1 → K2).
-5. **Managing several classes**, with class transfers mid-term.
-6. **Stronger data protection:** Postgres row-level security as a second line behind the API, a key-rotation command that re-encrypts everything, `pgaudit`, and automatic deletion after the retention period with a family data-request export.
-7. **Operations:** uptime and backup-failure alerts, monthly automated restore test, log shipping, and Playwright end-to-end tests in CI.
-8. **Offline-friendly teacher entry** on tablets (draft answers saved locally and synced), and photo upload straight from the camera with face-blur options.
+- **Questions keep their identity.** If the school rewords "Mia counts to 10" as "Mia counts objects to 10", it is still the same skill, so June and December still line up. If a question is replaced by a different skill, the new one simply shows no June rating, rather than a misleading comparison.
+- **Old reports never change.** When a report is approved, a copy of it is frozen exactly as the family received it. If a teacher later leaves, a child's photo is changed, or the school edits its questions, past reports stay exactly as they were sent.
+- **No family is missed.** If a semester ends before a report was approved, it can still be finished and approved afterwards.
+
+---
+
+## 3. Where the data will live, and how it is kept safe
+
+### What the school asked for
+
+The school wants to **look after its own children's data**, and not hand it to other companies. The plan below is built around that.
+
+### A private server in Singapore
+
+- **A server of our own, in Singapore.** A dedicated virtual server (DigitalOcean, Singapore region, 2 processors and 4 GB of memory) used only for Peterhouse. Nothing else runs on it, so a problem elsewhere cannot reach it. Keeping it in Singapore keeps the data close to the school and simple to explain under the data protection law (PDPA).
+- **Backups in Singapore too.** Every night a full, locked copy of the data is saved, kept for two weeks on the server and also copied to a separate private storage space in Singapore. If the server is lost, everything can be brought back.
+- **Expected cost:** about US$25–30 a month for the server and backup storage. Prices change, so this is checked before buying.
+
+### How it is protected, in everyday terms
+
+| What we do | In everyday terms | Example |
+| --- | --- | --- |
+| **Locked data (encryption)** | Children's names, birthdays, notes, reports and photos are scrambled before they are saved. Only the school's system holds the key to unscramble them. | If someone stole a copy of the database or a backup, they would see meaningless text, not "Mia Tan, born 3 May 2021". |
+| **Only two doors open (firewall)** | The server only accepts normal, secure website visits. Everything else is closed. The database cannot be reached from the internet at all. | Like a building where only the front entrance is open, and the records room has no outside door. |
+| **Private entrance for maintenance** | Only the developer can log in to look after the server, through a private connection, using a digital key instead of a password. | A stranger who guesses a password still cannot get in. |
+| **Secure connection** | Every visit uses the padlock (https), so nothing can be read on the way. | On school or home Wi-Fi, no one nearby can see what a teacher types. |
+| **Each person sees only their part** | Teachers see only their own classes, and only change the areas they teach. Only the administrator approves reports. | A Nursery 1 teacher cannot open a Kindergarten 2 child's report. |
+| **Lock-outs** | Five wrong passwords lock an account for 15 minutes. | Someone trying to guess a password gets stopped quickly. |
+| **A record of who did what** | Every login, opened report, edit, approval and download is recorded. | If a parent asks who looked at their child's report, the school can answer. |
+| **Backups that are tested** | Restoring a backup is practised regularly, not just assumed to work. | A backup that has never been restored might not work when it is needed. |
+| **Keys kept apart** | The key that unlocks the data is kept separately from the backups, in the school's password manager and an offline copy. | Losing a backup does not mean losing the children's data to someone else. |
+| **Updates and alerts** | Security updates install themselves. The developer is alerted if the site goes down, a backup fails, or the server is running out of space. | Problems are found by us, not by a parent. |
+
+**Being honest about "our own server".** A rented server still sits in a data centre owned by another company (here, DigitalOcean). Because everything sensitive is scrambled and the company is bound by contract, the risk is small. If the school wants no outside company involved at all, the system can run on a computer kept at the school, at the cost of looking after that machine (power, internet, repairs, backups).
+
+### What the AI sees, and what it does not
+
+This is the one place where information leaves the school's server, so it needs care.
+
+**The AI never learns who the child is.** Before anything is sent, the system replaces the child's name with "[Child]", other children with "[Friend]" and teachers with "[Teacher]", and removes phone numbers, emails and IC numbers. After the AI replies, the name is put back on the school's own server.
+
+> **What the teacher wrote:** "Mia loved the shape hunt with Aisyah and Ms Lim."
+> **What the AI receives:** "[Child] loved the shape hunt with [Friend] and [Teacher]."
+
+So the AI sees ratings and short anonymous notes, with no names, birthdays, photos or class.
+
+**Google does not use it.** We use a paid Gemini business account. Under its terms, Google does not use what we send to train or improve its products. The text is only used to write that one paragraph, and since it carries no names, nothing in it identifies a child or the family.
+
+If the school ever wants nothing at all to leave its server, the writing assistant can be switched to a model running on the school's own computer, or to the built-in sentence bank, without changing anything else.
+
+---
+
+## 4. Future enhancements
+
+**Before real children's data goes in**
+
+1. **Set up the Singapore server** described above, with nightly backups, alerts and a tested restore.
+2. **Data protection paperwork (PDPA):** how long reports are kept and when they are deleted, a plan for what to do if data is ever exposed, and a way for a family to ask for a copy of their child's data.
+3. **Two-step login** (a code from a phone app) for the administrator first, then all teachers.
+
+**For teachers**
+
+4. **Voice notes:** teachers speak their observations instead of typing, and the system turns them into text, including when they mix English and Chinese in one sentence.
+   *Example:* "Mia today 很棒, she counted all the blocks by herself" is written down exactly as said.
+5. **Attendance and observation history for each child:** short notes and attendance kept through the semester, so that at report time the teacher has a record to draw on instead of relying on memory.
+   *Example:* a note in March, "Mia helped a new friend find the toilet", is there to remind Ms Lim when she writes about Mia in June.
+6. **Help with the next semester:** suggestions built from last semester's "next steps", and a view of each child's growth from Playgroup all the way to Kindergarten 2.
+7. **Working without internet on tablets:** ratings saved on the tablet and sent when the connection returns, and photos taken straight from the camera, with an option to blur other children's faces.
+
+**For the school's leaders**
+
+8. **Class and year-group insights:** simple charts that show patterns across many children, without singling out any child.
+   *Examples:* "Across all K2 classes, Chinese is the area children find hardest this semester", or "K1 Sunflower grew most in Social-Emotional Development between June and December."
+
+**For families**
+
+9. **Sending reports to parents in one click:** connect to a parent portal, or send each family a secure, private link to view and download their child's PDF, instead of emailing attachments. When reports are approved, the administrator presses one button and every family receives theirs, and the school can see who has opened it.
+10. **Fully bilingual reports:** the whole report in English and Chinese, chosen per family.
+
+**Behind the scenes**
+
+11. **Automatic safety checks** every time the system is updated, and a one-click way to go back to the previous version if something goes wrong.
+12. **Regular restore drills** done automatically each month, with a report to the school.

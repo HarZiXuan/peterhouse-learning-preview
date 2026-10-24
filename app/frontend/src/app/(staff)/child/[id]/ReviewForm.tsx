@@ -156,6 +156,7 @@ export function ReviewForm({ view, adminView = false }: { view: ReviewView; admi
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadKey = useRef<string>(COVER_PHOTO_KEY);
   const top = useRef<HTMLDivElement>(null);
+  const pendingSkill = useRef<string | null>(null);
 
   const fill = (t: string) => fillTemplate(t, childName, pronoun);
   const progress = rubric.areas.map((a) => areaProgress(a, answers[a.key]));
@@ -241,6 +242,35 @@ export function ReviewForm({ view, adminView = false }: { view: ReviewView; admi
     top.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  // The first statement this person can still rate. Areas another teacher has not sent yet are skipped.
+  const gap = (() => {
+    for (const i of ordered) {
+      const a = rubric.areas[i];
+      if (partWhy(a.key)) continue;
+      const skills = answers[a.key]?.skills;
+      const skill = a.skills.find((s) => !skills?.[s.key]?.touched);
+      if (skill) return { index: i, skill: skill.key, name: a.shortName };
+    }
+    return null;
+  })();
+  const revealGap = (skill: string) => {
+    pendingSkill.current = null;
+    document.getElementById(`q-${skill}`)?.closest(".qrow")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  const showGap = (next: NonNullable<typeof gap>) => {
+    pendingSkill.current = next.skill;
+    toast.info(`Still to rate in ${next.name}.`);
+    if (area === next.index) revealGap(next.skill);
+    else setArea(next.index);
+  };
+
+  // After the area with the unanswered statement has rendered, scroll that statement into view.
+  useEffect(() => {
+    const skill = pendingSkill.current;
+    if (!skill) return;
+    revealGap(skill);
+  }, [area]);
+
   const write = () => {
     setError(null);
     startWriting(async () => {
@@ -249,7 +279,20 @@ export function ReviewForm({ view, adminView = false }: { view: ReviewView; admi
       if (res.ok) {
         toast.success(res.fellBack ? "Report written with the built-in writer. Read it through and change anything that needs it." : "Report written. Read it through and change anything that needs it.");
         router.push(`/child/${reviewId}/report`);
-      } else setError(res.error);
+      } else {
+        setError(res.error);
+        if (res.gap) {
+          const i = rubric.areas.findIndex((a) => a.key === res.gap!.areaKey);
+          const stored = latest.current[res.gap.areaKey];
+          if (i >= 0 && stored?.skills[res.gap.skillKey]) {
+            const next = structuredClone(stored);
+            next.skills[res.gap.skillKey] = { level: 0, touched: false };
+            latest.current = { ...latest.current, [res.gap.areaKey]: next };
+            setAnswers(latest.current);
+          }
+          if (i >= 0) showGap({ index: i, skill: res.gap.skillKey, name: rubric.areas[i].shortName });
+        }
+      }
     });
   };
 
@@ -299,8 +342,6 @@ export function ReviewForm({ view, adminView = false }: { view: ReviewView; admi
   const prevArea = at > 0 ? ordered[at - 1] : null;
   const nextArea = at >= 0 && at < ordered.length - 1 ? ordered[at + 1] : null;
   const isLast = nextArea === null;
-  // The next area still to rate by this person: never one that is still with another teacher.
-  const firstGap = ordered.find((i) => progress[i].todo > 0 && groupOf(i) === "mine" && (canWrite || view.parts[rubric.areas[i].key]?.mine)) ?? -1;
   const savedLine = saved.s === "saving" ? "Saving…" : saved.s === "error" ? "Could not save. Check your connection." : `Saved ${timeAgo(saved.at)}`;
 
   return (
@@ -339,9 +380,9 @@ export function ReviewForm({ view, adminView = false }: { view: ReviewView; admi
           {canWrite && (
             <Button
               type="button"
-              disabled={!ready || writing || !!locked || view.waitingFor.length > 0}
-              onClick={write}
-              title={view.waitingFor.length ? "Every teacher sends their part first" : ready ? undefined : "Rate every statement, or mark it Not seen yet, first"}
+              disabled={writing || !!locked || view.waitingFor.length > 0 || (!ready && !gap)}
+              onClick={() => (gap ? showGap(gap) : write())}
+              title={view.waitingFor.length ? "Every teacher sends their part first" : gap ? "Takes you to the statement still to rate" : undefined}
             >
               <Icon name="write" size={16} /> {view.hasReport ? "Write again" : "Write report"}
             </Button>
@@ -523,7 +564,7 @@ export function ReviewForm({ view, adminView = false }: { view: ReviewView; admi
                 ? `${SCALE[level - 1].label}: ${SCALE[level - 1].meaning.toLowerCase()}.`
                 : "Not rated yet";
             return (
-              <div key={s.key} className="qrow">
+              <div key={s.key} className="qrow scroll-mt-24">
                 <div className="qrow-top">
                   <p id={id} className="qtext">
                     {fill(s.text)}
@@ -671,19 +712,17 @@ export function ReviewForm({ view, adminView = false }: { view: ReviewView; admi
               {prevArea === null ? "Previous" : rubric.areas[prevArea].shortName}
             </Button>
             {isLast ? (
-              firstGap < 0 ? (
-                canWrite ? (
-                  <Button type="button" onClick={write} disabled={writing || !!locked || view.waitingFor.length > 0}>
-                    <Icon name="write" size={16} /> {view.hasReport ? "Write again" : "Write report"}
-                  </Button>
-                ) : (
-                  <span />
-                )
-              ) : (
-                <Button type="button" variant="secondary" onClick={() => goTo(firstGap)}>
-                  Still to rate: {rubric.areas[firstGap].shortName}
+              gap ? (
+                <Button type="button" variant="secondary" onClick={() => showGap(gap)}>
+                  Still to rate: {gap.name}
                   <Icon name="right" size={16} stroke={2} />
                 </Button>
+              ) : canWrite ? (
+                <Button type="button" onClick={write} disabled={writing || !!locked || view.waitingFor.length > 0}>
+                  <Icon name="write" size={16} /> {view.hasReport ? "Write again" : "Write report"}
+                </Button>
+              ) : (
+                <span />
               )
             ) : (
               <Button type="button" onClick={() => nextArea !== null && goTo(nextArea)}>
